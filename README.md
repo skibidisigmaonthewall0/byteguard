@@ -1,72 +1,58 @@
-# Anti-RAT Security Mod for Minecraft 1.21.11 (Fabric / Java 21)
+# 🛡️ ByteGuard — Pre-Launch Security & Bytecode Threat Protection
 
-A complete client-side Anti-RAT protection system for Minecraft 1.21.11 built on Fabric Loader 0.16.0+ and Java 21. Anti-RAT scans, detects, blocks, and reports malicious mod behavior before it can steal accounts, tokens, or execute arbitrary shell commands.
+![Version](https://img.shields.io/badge/Minecraft-1.21.11-brightgreen)
+![Loader](https://img.shields.io/badge/Loader-Fabric-blue)
+![Java](https://img.shields.io/badge/Java-21-orange)
+![License](https://img.shields.io/badge/License-MIT-green)
+
+**ByteGuard** is an open-source, enterprise-grade pre-launch security suite and bytecode analyzer designed to protect Minecraft players, server administrators, and modpack developers from malicious mods, Remote Access Trojans (RATs), token stealers, and supply-chain attacks.
+
+Before your game loads, ByteGuard scans all `.jar` files in your `mods/` directory using deep ASM instruction flow analysis, integer stack simulation, string de-obfuscation, recursive Jar-in-Jar extraction, and native binary inspection — catching threats **before** any code can execute.
 
 ---
 
-## Technical Architecture & Limitations
+## Technical Architecture & Capabilities
 
 ### 1. Pre-Launch Security Gate
 - **Hook**: Implements `PreLaunchEntrypoint` provided by Fabric Loader.
 - **Scanning**: Uses **ASM 9.7** bytecode analysis to inspect class files inside all `.jar` files in the `.minecraft/mods` directory before game initialization completes.
-- **Quarantine**: Detects process execution APIs (`ProcessBuilder`, `Runtime.exec`), hardcoded Discord Webhooks, dynamic class loading (`URLClassLoader`, `Unsafe`), and sensitive account file references (`launcher_accounts.json`, `usercache.json`, `usernamecache.json`).
-- **Limitation Note**: Fabric initializes `PreLaunchEntrypoint` prior to game window creation. However, JVM class loading for core libraries happens during bootstrap. For 100% bytecode interception prior to JVM bootstrap, pair this mod with a launcher bootstrap `-javaagent` argument.
+- **Quarantine Engine**: Detects process execution APIs (`ProcessBuilder`, `Runtime.exec`), hardcoded Discord Webhooks, dynamic class loading (`URLClassLoader`, `Unsafe`), and sensitive account file references (`launcher_accounts.json`, `usercache.json`, `usernamecache.json`).
 
 ### 2. Obfuscation Detection & Heuristics
 - **Obfuscation Score (0–100)**: Calculated using string Shannon entropy, short class name ratio (`a/b/c`), synthetic method density, missing metadata (`fabric.mod.json`/`mcmod.info`), and suspicious reflection density.
-- **Threshold**: Mods scoring over 50 or flagged with high-confidence RAT signatures are quarantined and trigger a startup `SecurityReportScreen`.
+- **Threshold**: Mods scoring over 50 or flagged with high-confidence RAT signatures trigger the pre-launch security suite GUI.
 
 ### 3. File System & Process Execution Interceptor
 - **Auto-Deny Protection**: Automatically blocks access to `launcher_accounts.json`, `usercache.json`, and `usernamecache.json` without prompting.
 - **Process Blocking**: Intercepts shell execution attempts (`cmd.exe`, `powershell`, `bash`, `sh`, `curl`, `wget`, `nc`, `netcat`, `.exe`, `.dll`, `.bat`).
-- **Interactive Prompts**: Prompts the user with `PermissionPromptScreen` for flagged `.minecraft` folder accesses.
-
-### 4. ClickGUI & Controls
-- **Default Keybind**: `Right Shift` (configurable in Controls menu).
-- **Tabs**:
-  - `SETTINGS`: Toggle Safe Mode, Emergency Kill Switch, Default Mod Behavior.
-  - `WHITELIST`: View/Manage allowed mods.
-  - `BLACKLIST`: View/Manage denied mods.
-  - `SCAN_RESULTS`: Review pre-launch quarantine reports.
-  - `LOGS`: Live log viewer for allowed/denied actions.
-  - `IMPORT_EXPORT`: Export/Import permissions and settings as JSON.
 
 ---
 
-## Log Format
+## 🦠 Malware Families Neutralized
 
-All events are logged to `.minecraft/anti-rat-logs.txt`:
-```
-[timestamp] [MOD_NAME] [ACTION_TYPE] [FILE/PATH/COMMAND] [ALLOWED/DENIED]
-```
-Example:
-```
-[2026-07-28 13:10:00] [MaliciousMod] [FILE_READ] [C:/Users/.../launcher_accounts.json] [DENIED]
-[2026-07-28 13:10:05] [MaliciousMod] [PROCESS_EXEC] [powershell -nop -c ...] [DENIED]
-```
-
----
-
-## Blocked Mod Response & Quarantine
-
-When a malicious mod is detected:
-1. Minecraft startup is paused, and `SecurityReportScreen` displays the full report (mod name, JAR filename, suspicion level, capabilities, obfuscation score, reasons).
-2. The user can choose:
-   - **Allow Once**
-   - **Always Allow**
-   - **Quarantine** (safely moves the JAR file to `.minecraft/quarantine/`)
-   - **Open Folder**
-   - **Close Minecraft**
-
-> **Safety Guarantee**: Anti-RAT never deletes your `.minecraft` folder, saves, screenshots, or resource packs. All file operations are strictly scoped and non-destructive.
+| Family | Vector & Indicators |
+|---|---|
+| **Fractureiser** | `dev/neko/`, `Updater.class`, `VMEscape`, `libWebGL64.jar`, `FriendlyByteBuf` spoofing |
+| **WeedHack** | EtherHiding C2 (`cloudflare-eth.com`, `infura.io`, `eth_call`), webcam access, keylogging |
+| **SilentNet** | `silentnet.st` URLs, fake Krypton Client impersonation, DLL sideloading |
+| **Skyrage** | `Updater.class` propagation loop, `vmd-gnu` Linux persistence service |
+| **BleedingPipe** | Unsafe `ObjectInputStream` deserialization gadget chains |
+| **Ghost Client RATs** | Embedded RAT payloads in fake/leaked cheat clients |
+| **Java RAT Frameworks** | Quasar RAT, JRAT, Adwind, DarkComet reverse shell handlers |
 
 ---
 
-## Build & Installation
+## 📦 Build & Installation
 
 1. Prerequisites: **Java 21 SDK**, **Gradle**.
 2. Build command:
    ```bash
-   ./gradlew build
+   build.bat
    ```
-3. Copy the compiled JAR from `build/libs/anti-rat-1.0.0.jar` into your Minecraft `.minecraft/mods` folder.
+3. Copy the compiled JAR from `build/libs/byteguard-1.0.0.jar` into your Minecraft `.minecraft/mods` folder.
+
+---
+
+## 👨‍💻 License
+
+Distributed under the **MIT License**. Copyright (c) 2026 MarkDev1337.

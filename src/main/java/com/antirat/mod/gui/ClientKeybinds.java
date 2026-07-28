@@ -17,19 +17,10 @@ import java.util.List;
  */
 public class ClientKeybinds {
 
-    private static KeyBinding keyBindingClickGUI;
     private static boolean startupReportShown = false;
 
     public static void register() {
-        // Register Right Shift Keybind for ClickGUI via Fabric API
-        keyBindingClickGUI = KeyBindingHelper.registerKeyBinding(new KeyBinding(
-            "key.antirat.open_gui",
-            InputUtil.Type.KEYSYM,
-            GLFW.GLFW_KEY_RIGHT_SHIFT,
-            "category.antirat.security"
-        ));
-
-        // Client Tick Handler for Keybind and Startup Security Screen
+        // Client Tick Handler for Startup Security Screen
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client == null) return;
 
@@ -38,13 +29,6 @@ public class ClientKeybinds {
                 startupReportShown = true;
                 List<SecurityScanner.SecurityReport> reports = QuarantineManager.getQuarantinedReports();
                 client.execute(() -> client.setScreen(new SecurityReportScreen(reports)));
-            }
-
-            // Keybind Trigger
-            while (keyBindingClickGUI != null && keyBindingClickGUI.wasPressed()) {
-                if (client.currentScreen == null) {
-                    client.setScreen(new ClickGUI());
-                }
             }
         });
     }
