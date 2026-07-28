@@ -1,0 +1,22 @@
+# Gradle build files
+.gradle/
+build/
+out/
+bin/
+
+# IDE files
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files & output jars in root
+*.jar
+*.log
+!gradle/wrapper/gradle-wrapper.jar

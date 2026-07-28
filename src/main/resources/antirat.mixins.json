@@ -1,0 +1,13 @@
+{
+  "required": true,
+  "package": "com.antirat.mod.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "TitleScreenMixin"
+  ],
+  "client": [
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

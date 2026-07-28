@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "id": "byteguard",
+  "version": "${version}",
+  "name": "ByteGuard",
+  "description": "ByteGuard is an advanced, enterprise-grade pre-launch security suite and bytecode analyzer designed to protect Minecraft players, server administrators, and modpack developers from malicious mods, RATs, and token stealers.",
+  "authors": [
+    "MarkDev1337"
+  ],
+  "contact": {},
+  "license": "MIT",
+  "icon": "assets/byteguard/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "preLaunch": [
+      "com.antirat.mod.AntiRAT"
+    ],
+    "main": [
+      "com.antirat.mod.AntiRAT"
+    ],
+    "client": [
+      "com.antirat.mod.AntiRAT"
+    ]
+  },
+  "mixins": [
+    "antirat.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.11",
+    "java": ">=21"
+  }
+}
