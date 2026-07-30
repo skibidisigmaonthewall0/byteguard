@@ -373,13 +373,43 @@ public class NativeSecurityWindow {
         reportsTab.setBackground(PANEL);
         reportsTab.setBorder(new EmptyBorder(10, 10, 10, 10));
 
+        // Filtered list data holding original report indexes
+        List<SecurityScanner.SecurityReport> filteredReports = new ArrayList<>(allReports);
+
         DefaultListModel<String> listModel = new DefaultListModel<>();
-        for (SecurityScanner.SecurityReport rep : allReports) {
-            int s = Math.min(100, rep.suspicionScore);
-            String prefix = rep.suspicionLevel == SecurityScanner.SuspicionLevel.CLEAN ? "[✓]" : "[!]";
-            listModel.addElement(String.format("%s %s — %s (%d/100)",
-                prefix, rep.metadata.getName(), rep.suspicionLevel.label, s));
-        }
+        Runnable rebuildModList = () -> {
+            listModel.clear();
+            for (SecurityScanner.SecurityReport rep : filteredReports) {
+                int s = Math.min(100, rep.suspicionScore);
+                String prefix = rep.suspicionLevel == SecurityScanner.SuspicionLevel.CLEAN ? "[✓]" : "[!]";
+                listModel.addElement(String.format("%s %s — %s (%d/100)",
+                    prefix, rep.metadata.getName(), rep.suspicionLevel.label, s));
+            }
+        };
+        rebuildModList.run();
+
+        // Search Bar Panel
+        JPanel searchPanel = new JPanel(new BorderLayout(8, 0));
+        searchPanel.setOpaque(false);
+        searchPanel.setBorder(new EmptyBorder(0, 0, 8, 0));
+
+        JLabel searchLabel = new JLabel("🔍 Search Mods: ");
+        searchLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        searchLabel.setForeground(ACCENT);
+
+        JTextField searchField = new JTextField();
+        searchField.setBackground(BG);
+        searchField.setForeground(TEXT);
+        searchField.setCaretColor(ACCENT);
+        searchField.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        searchField.setBorder(BorderFactory.createCompoundBorder(
+            new LineBorder(BORDER, 1, true),
+            new EmptyBorder(6, 8, 6, 8)
+        ));
+
+        searchPanel.add(searchLabel, BorderLayout.WEST);
+        searchPanel.add(searchField, BorderLayout.CENTER);
+        reportsTab.add(searchPanel, BorderLayout.NORTH);
 
         JList<String> modList = new JList<>(listModel);
         modList.setBackground(BG);
@@ -391,8 +421,8 @@ public class NativeSecurityWindow {
             @Override
             public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
                 super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
-                if (!isSelected && index < allReports.size()) {
-                    SecurityScanner.SuspicionLevel lvl = allReports.get(index).suspicionLevel;
+                if (!isSelected && index >= 0 && index < filteredReports.size()) {
+                    SecurityScanner.SuspicionLevel lvl = filteredReports.get(index).suspicionLevel;
                     switch (lvl) {
                         case CRITICAL -> setForeground(new Color(255, 80, 110));
                         case HIGH     -> setForeground(new Color(255, 120, 50));
@@ -428,8 +458,8 @@ public class NativeSecurityWindow {
 
         modList.addListSelectionListener(e -> {
             int idx = modList.getSelectedIndex();
-            if (idx < 0 || idx >= allReports.size()) return;
-            SecurityScanner.SecurityReport r = allReports.get(idx);
+            if (idx < 0 || idx >= filteredReports.size()) return;
+            SecurityScanner.SecurityReport r = filteredReports.get(idx);
             int displayScore = Math.min(100, r.suspicionScore);
             detailTitle.setText(r.metadata.getName() + " — " + r.suspicionLevel.label + " (" + displayScore + "/100)");
 
@@ -457,6 +487,31 @@ public class NativeSecurityWindow {
 
             detailArea.setText(sb.toString());
             detailArea.setCaretPosition(0);
+        });
+
+        // Search listener
+        searchField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            private void filter() {
+                String q = searchField.getText().toLowerCase().trim();
+                filteredReports.clear();
+                for (SecurityScanner.SecurityReport r : allReports) {
+                    String name = r.metadata.getName().toLowerCase();
+                    String id = r.metadata.getModId() != null ? r.metadata.getModId().toLowerCase() : "";
+                    String jar = r.metadata.getJarFile() != null ? r.metadata.getJarFile().getName().toLowerCase() : "";
+                    if (q.isEmpty() || name.contains(q) || id.contains(q) || jar.contains(q)) {
+                        filteredReports.add(r);
+                    }
+                }
+                rebuildModList.run();
+                if (!filteredReports.isEmpty()) modList.setSelectedIndex(0);
+                else {
+                    detailTitle.setText("No matching mods found");
+                    detailArea.setText("");
+                }
+            }
+            public void insertUpdate(javax.swing.event.DocumentEvent e) { filter(); }
+            public void removeUpdate(javax.swing.event.DocumentEvent e) { filter(); }
+            public void changedUpdate(javax.swing.event.DocumentEvent e) { filter(); }
         });
 
         if (!allReports.isEmpty()) modList.setSelectedIndex(0);
