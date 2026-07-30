@@ -309,6 +309,16 @@ public class SecurityScanner {
             }
         }
 
+        // ── Modrinth Cloud Hash Verification (keyless, runs in parallel) ────────
+        // Checks if this exact JAR file is the official published version on Modrinth.
+        // Verified = score bonus. Not on Modrinth = noted but not penalised.
+        try {
+            CloudScanner.CloudScanResult cloud = CloudScanner.scan(jarFile);
+            score += cloud.totalScoreAdded;
+            capabilities.addAll(cloud.cloudCapabilities);
+            reasons.addAll(cloud.cloudReasons);
+        } catch (Exception ignored) {}
+
         // 1. Obfuscation Heuristics
         ObfuscationDetector.ObfuscationResult obf = ObfuscationDetector.analyzeJar(jarFile);
         score += obf.score;
@@ -546,6 +556,42 @@ public class SecurityScanner {
                         capabilities.add("Custom ClassLoader Subclass — Dynamic Bytecode Injection Trap");
                         addReason("Class " + cn.name + " extends " + cn.superName + " — potential runtime bytecode injection vector", reasons);
                         score += 65;
+                    }
+
+                    // ── Hardened Class Name Heuristics ─────────────────────
+                    // Legitimate mods use descriptive package names. RATs use obfuscated
+                    // or explicitly malicious class names.
+                    String simpleName = cn.name.contains("/")
+                        ? cn.name.substring(cn.name.lastIndexOf('/') + 1).toLowerCase()
+                        : cn.name.toLowerCase();
+                    String fullNameLc = cn.name.toLowerCase();
+
+                    // Explicit stealer/RAT/injector naming
+                    boolean hasSuspiciousClassName =
+                        simpleName.contains("stealer") || simpleName.contains("grabber") ||
+                        simpleName.contains("injector") || simpleName.contains("exfil") ||
+                        simpleName.contains("payload") || simpleName.contains("dropper") ||
+                        simpleName.contains("backdoor") || simpleName.contains("keylogger") ||
+                        simpleName.contains("spyware") || simpleName.contains("harvest") ||
+                        simpleName.contains("c2client") || simpleName.contains("ratclient") ||
+                        simpleName.contains("tokenstealer") || simpleName.contains("cookiegrabber") ||
+                        simpleName.contains("cryptominer") || simpleName.contains("miner") ||
+                        simpleName.contains("botnet") || simpleName.contains("spreader") ||
+                        simpleName.contains("persistence") || simpleName.contains("rootkit");
+
+                    if (hasSuspiciousClassName) {
+                        capabilities.add("!! Suspicious Class Name — Explicit Malware Nomenclature: " + cn.name);
+                        addReason("Class uses explicit malware name: " + cn.name, reasons);
+                        score += 55;
+                    }
+
+                    // Suspicious interface implementations
+                    if (cn.interfaces != null) {
+                        for (String iface : cn.interfaces) {
+                            if (iface.equals("java/lang/Runnable") && simpleName.contains("update")) {
+                                score += 10; // Runnable + "update" in name = potential persistence
+                            }
+                        }
                     }
 
                     // 2. Full De-obfuscation Pipeline
@@ -931,6 +977,14 @@ public class SecurityScanner {
                                 if (entropy > 4.8 && str.length() > 30) {
                                     flagStr("[High Entropy] " + (str.length() > 50 ? str.substring(0, 47) + "..." : str), flaggedStrings);
                                     score += 15;
+                                }
+
+                                // Raw IP address string (standalone IPv4 address used for direct Socket/HTTP connection)
+                                if (str.matches("^(?:[0-9]{1,3}\\.){3}[0-9]{1,3}$") && !str.equals("127.0.0.1") && !str.equals("0.0.0.0")) {
+                                    capabilities.add("!! Raw IP C2 Address String Constant");
+                                    addReason("Hardcoded raw IPv4 address found in " + cn.name + ": " + str + " — bypasses DNS resolving for C2", reasons);
+                                    flagStr("[RAW IP C2] " + str, flaggedStrings);
+                                    score += 85;
                                 }
                             }
                         }
