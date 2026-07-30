@@ -930,7 +930,10 @@ public class SecurityScanner {
                 cap.contains("SHA-256 MATCHES") || cap.contains("BLOCKED MOD ID") ||
                 cap.contains("Fractureiser") || cap.contains("WeedHack") ||
                 cap.contains("SilentNet") || cap.contains("SCREENSHOT EXFILTRATION") ||
-                cap.contains("EtherHiding") || cap.contains("C2 / Exfiltration")) {
+                cap.contains("EtherHiding") || cap.contains("C2 / Exfiltration") ||
+                cap.contains("Raw IP C2 Address") || cap.contains("URLClassLoader") ||
+                cap.contains("Custom ClassLoader Subclass") || cap.contains("Direct Process Execution") ||
+                cap.contains("XOR Bitwise String Decryption") || cap.contains("ScriptEngine")) {
                 hasActualMalwareSignature = true;
                 break;
             }
