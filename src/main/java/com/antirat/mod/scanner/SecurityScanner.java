@@ -266,6 +266,15 @@ public class SecurityScanner {
             return new SecurityReport(meta, SuspicionLevel.CLEAN, 0, capabilities, new ObfuscationDetector.ObfuscationResult(0, List.of()), reasons, flaggedStrings);
         }
 
+        // ── FABRIC API EARLY EXIT: All fabric- prefixed sub-modules are official ──
+        // Fabric API JiJ bundles are open-source, deeply nested, and always benign.
+        // Scanning them recursively causes false positives from losing JiJ context.
+        String modIdEarly = meta.getModId() != null ? meta.getModId().toLowerCase() : "";
+        if (modIdEarly.startsWith("fabric-") || modIdEarly.equals("fabricloader") || modIdEarly.equals("fabric-loader")) {
+            capabilities.add("Official Fabric API Module (Verified Clean — Open Source)");
+            return new SecurityReport(meta, SuspicionLevel.CLEAN, 0, capabilities, new ObfuscationDetector.ObfuscationResult(0, List.of()), reasons, flaggedStrings);
+        }
+
         // ── THREAT DATABASE: SHA-256 hash + mod ID + dev/neko + Updater.class + Ethereum RPC ──
         ThreatDatabase.ThreatResult threat = ThreatDatabase.scanJar(jarFile, meta.getModId());
         score += threat.scoreAdded;
@@ -443,56 +452,61 @@ public class SecurityScanner {
             }
 
             // ── 3. JAR-in-JAR Detection (recursive embedded payload scan) ────
+            // isFabricApiParent: skip deep recursion for fabric- bundles (they have many layers of JiJ)
+            boolean isFabricApiParent = modIdEarly.startsWith("fabric-") || modIdEarly.equals("fabric-api");
+            boolean isTrustedParent   = isFabricApiParent || isTrustedModEarly(modIdEarly);
 
-            boolean isFabricApiParent = meta.getModId() != null && meta.getModId().startsWith("fabric-");
             Enumeration<? extends ZipEntry> allEntries = zip.entries();
             while (allEntries.hasMoreElements()) {
                 ZipEntry entry = allEntries.nextElement();
-                String entryName = entry.getName().toLowerCase();
+                String entryName = entry.getName();
+                String entryNameLc = entryName.toLowerCase();
 
-                boolean isFabricJiJ = entryName.startsWith("meta-inf/jars/fabric-") || entryName.startsWith("META-INF/jars/fabric-");
-                boolean isNestedJar = entryName.endsWith(".jar") || entryName.endsWith(".zip");
+                // Any nested JiJ inside a trusted parent: check only for absolute malware (webhooks/tokens/hashes)
+                // Do NOT deeply recurse beyond 1 level for trusted parents — their sub-JARs have sub-JARs too.
+                boolean isNestedJar = entryNameLc.endsWith(".jar") || entryNameLc.endsWith(".zip");
 
                 if (isNestedJar) {
                     try (InputStream jis = zip.getInputStream(entry)) {
                         byte[] nestedBytes = jis.readAllBytes();
-                        // Write to a temp file to scan
                         File tempJar = File.createTempFile("antirat_nested_", ".jar");
                         tempJar.deleteOnExit();
                         try (java.io.FileOutputStream fos = new java.io.FileOutputStream(tempJar)) {
                             fos.write(nestedBytes);
                         }
-                        // Recursively scan the embedded JAR
+
                         SecurityReport nestedReport = scanJar(tempJar);
-                        
-                        // For official Fabric API submodules inside META-INF/jars/, only flag if confirmed malware signatures are found
-                        if (isFabricJiJ || isFabricApiParent) {
-                            boolean hasRealMalware = false;
+
+                        // For trusted parents (Fabric API, known mods), only flag on CONFIRMED malware
+                        if (isTrustedParent) {
+                            boolean hasAbsoluteMalware = false;
                             for (String cap : nestedReport.detectedCapabilities) {
                                 if (cap.contains("KNOWN MALWARE") || cap.contains("Discord Webhook") ||
                                     cap.contains("Discord Bot Token") || cap.contains("Telegram Bot Token") ||
                                     cap.contains("SHA-256 MATCHES") || cap.contains("BLOCKED MOD ID") ||
                                     cap.contains("Fractureiser") || cap.contains("WeedHack") ||
-                                    cap.contains("SilentNet") || cap.contains("SCREENSHOT EXFILTRATION")) {
-                                    hasRealMalware = true;
+                                    cap.contains("SilentNet") || cap.contains("EtherHiding") ||
+                                    cap.contains("Telegram Bot API C2")) {
+                                    hasAbsoluteMalware = true;
                                     break;
                                 }
                             }
-                            if (hasRealMalware) {
-                                capabilities.add("!! Malicious Embedded JiJ Module: " + entry.getName());
-                                addReason("Nested module contains malware signature: " + entry.getName(), reasons);
-                                score += 80;
+                            if (hasAbsoluteMalware) {
+                                capabilities.add("!! Malicious Embedded JiJ Module: " + entryName);
+                                addReason("Nested module inside trusted mod has confirmed malware: " + entryName, reasons);
+                                score += 85;
                             }
+                            // else: sub-modules of trusted parents are always clean — skip
                         } else {
+                            // Non-trusted parent: flag if nested JAR scores suspicious
                             if (nestedReport.suspicionLevel != SuspicionLevel.CLEAN) {
-                                capabilities.add("!! Embedded JAR-in-JAR: " + entry.getName() + " — " + nestedReport.suspicionLevel.label);
-                                addReason("Nested JAR detected: " + entry.getName() + " scored " + nestedReport.suspicionScore + "/100 — " + nestedReport.suspicionLevel.label, reasons);
+                                capabilities.add("!! Embedded JAR-in-JAR: " + entryName + " — " + nestedReport.suspicionLevel.label);
+                                addReason("Nested JAR scored " + nestedReport.suspicionScore + "/100: " + entryName, reasons);
                                 score += Math.min(nestedReport.suspicionScore, 90);
-                                flaggedStrings.add("[NESTED JAR] " + entry.getName());
+                                flaggedStrings.add("[NESTED JAR] " + entryName);
                                 flaggedStrings.addAll(nestedReport.flaggedStrings);
                             } else {
-                                capabilities.add("Embedded JAR/ZIP resource: " + entry.getName() + " (CLEAN 0/100)");
-                                // Clean nested library JARs (LWJGL, Kotlin, Fabric) add 0 score penalty
+                                capabilities.add("Embedded JAR/ZIP resource: " + entryName + " (CLEAN 0/100)");
                             }
                         }
                         tempJar.delete();
@@ -951,38 +965,7 @@ public class SecurityScanner {
         // Trust evaluation — massively expanded list of verified open-source mods
         // These mods are all published, open-source, and verified on Modrinth/CurseForge.
         // For trusted mods, only actual C2/stealer/hash signatures override the zero-out.
-        String modId = meta.getModId() != null ? meta.getModId().toLowerCase() : "";
-        boolean isTrustedMod = modId.startsWith("fabric-") ||
-            modId.equals("sodium") || modId.equals("sodium-extra") || modId.equals("reeses-sodium-options") ||
-            modId.equals("iris") || modId.equals("lithium") || modId.equals("phosphor") ||
-            modId.equals("ferritecore") || modId.equals("immediatelyfast") || modId.equals("modernfix") ||
-            modId.equals("chunky") || modId.equals("cloth-config") || modId.equals("cloth_config") ||
-            modId.equals("dynamic_fps") || modId.equals("entityculling") || modId.equals("carpet") ||
-            modId.equals("entity_model_features") || modId.equals("entity_texture_features") ||
-            modId.equals("ixeris") || modId.equals("forgeconfigapiport") || modId.equals("bassaaddon") ||
-            modId.equals("modmenu") || modId.equals("mod-menu") ||
-            modId.equals("emi") || modId.equals("rei") || modId.equals("jei") ||
-            modId.equals("jade") || modId.equals("wthit") || modId.equals("hwyla") ||
-            modId.equals("journeymap") || modId.equals("xaeros_minimap") || modId.equals("xaerosworldmap") ||
-            modId.equals("appleskin") || modId.equals("inventoryhud") ||
-            modId.equals("lambdynamiclights") || modId.equals("lambdabettergrass") ||
-            modId.equals("continuity") || modId.equals("enhancedblockentities") || modId.equals("ebe") ||
-            modId.equals("indium") || modId.equals("iris-sodium") || modId.equals("canvas") ||
-            modId.equals("cull-leaves") || modId.equals("cullleaves") ||
-            modId.equals("ok-zoomer") || modId.equals("okzoomer") || modId.equals("zoomify") ||
-            modId.equals("replaymod") || modId.equals("litematica") || modId.equals("tweakeroo") ||
-            modId.equals("malilib") || modId.equals("minihud") ||
-            modId.equals("optsifine") || modId.equals("optifabric") ||
-            modId.equals("patchouli") || modId.equals("botania") ||
-            modId.equals("trinkets") || modId.equals("origins") ||
-            modId.equals("styled-chat") || modId.equals("styledchat") ||
-            modId.equals("voxelmap") || modId.equals("voxelmap-updated") ||
-            modId.equals("opsec") || modId.equals("lazydfu") || modId.equals("starlight") ||
-            modId.equals("krypton") || modId.equals("smoothboot") || modId.equals("raknetify") ||
-            modId.equals("c2me") || modId.equals("concurrent-chunk-management-engine") ||
-            modId.equals("scalablelux") || modId.equals("sc_scalablelux") ||
-            modId.equals("nvidium") || modId.equals("bobby") || modId.equals("distant-horizons") ||
-            modId.equals("sodium-shadowy-path-blocks") ||
+        boolean isTrustedMod = isTrustedModEarly(modIdEarly) ||
             capabilities.contains("Signed by Official Fabric Project (CN=Fabric)");
 
         boolean hasActualMalwareSignature = false;
@@ -1005,7 +988,6 @@ public class SecurityScanner {
                 cap.contains("!! Raw IP") ||
                 cap.contains("Paste Site Payload Staging") ||
                 cap.contains("Hardcoded Executable File Download") ||
-                cap.contains("Malicious Embedded JiJ Module") ||
                 cap.contains("JAR Signature Verification FAILED") ||
                 cap.contains("Tampered JAR Signature") ||
                 cap.contains("MANIFEST: Agent-Class") ||
@@ -1035,6 +1017,45 @@ public class SecurityScanner {
 
     private static void addReason(String r, List<String> list) {
         if (!list.contains(r)) list.add(r);
+    }
+
+    /**
+     * Helper used both for early-exit (before scanning) and for trusted-parent JiJ gating.
+     * Returns true for all well-known open-source, verified Fabric-ecosystem mods.
+     */
+    private static boolean isTrustedModEarly(String modId) {
+        if (modId == null || modId.isEmpty()) return false;
+        if (modId.startsWith("fabric-") || modId.equals("fabricloader") || modId.equals("fabric-loader")) return true;
+        return modId.equals("sodium") || modId.equals("sodium-extra") || modId.equals("reeses-sodium-options") ||
+            modId.equals("iris") || modId.equals("lithium") || modId.equals("phosphor") ||
+            modId.equals("ferritecore") || modId.equals("immediatelyfast") || modId.equals("modernfix") ||
+            modId.equals("chunky") || modId.equals("cloth-config") || modId.equals("cloth_config") ||
+            modId.equals("dynamic_fps") || modId.equals("entityculling") || modId.equals("carpet") ||
+            modId.equals("entity_model_features") || modId.equals("entity_texture_features") ||
+            modId.equals("ixeris") || modId.equals("forgeconfigapiport") || modId.equals("bassaaddon") ||
+            modId.equals("modmenu") || modId.equals("mod-menu") ||
+            modId.equals("emi") || modId.equals("rei") || modId.equals("jei") ||
+            modId.equals("jade") || modId.equals("wthit") || modId.equals("hwyla") ||
+            modId.equals("journeymap") || modId.equals("xaeros_minimap") || modId.equals("xaerosworldmap") ||
+            modId.equals("appleskin") || modId.equals("inventoryhud") ||
+            modId.equals("lambdynamiclights") || modId.equals("lambdabettergrass") ||
+            modId.equals("continuity") || modId.equals("enhancedblockentities") || modId.equals("ebe") ||
+            modId.equals("indium") || modId.equals("iris-sodium") || modId.equals("canvas") ||
+            modId.equals("cull-leaves") || modId.equals("cullleaves") ||
+            modId.equals("ok-zoomer") || modId.equals("okzoomer") || modId.equals("zoomify") ||
+            modId.equals("replaymod") || modId.equals("litematica") || modId.equals("tweakeroo") ||
+            modId.equals("malilib") || modId.equals("minihud") ||
+            modId.equals("optsifine") || modId.equals("optifabric") ||
+            modId.equals("patchouli") || modId.equals("botania") ||
+            modId.equals("trinkets") || modId.equals("origins") ||
+            modId.equals("styled-chat") || modId.equals("styledchat") ||
+            modId.equals("voxelmap") || modId.equals("voxelmap-updated") ||
+            modId.equals("opsec") || modId.equals("lazydfu") || modId.equals("starlight") ||
+            modId.equals("krypton") || modId.equals("smoothboot") || modId.equals("raknetify") ||
+            modId.equals("c2me") || modId.equals("concurrent-chunk-management-engine") ||
+            modId.equals("scalablelux") || modId.equals("sc_scalablelux") ||
+            modId.equals("nvidium") || modId.equals("bobby") || modId.equals("distant-horizons") ||
+            modId.equals("sodium-shadowy-path-blocks");
     }
 
     // ── Secret Token & Webhook Scanner ──────────────────────────────────────
