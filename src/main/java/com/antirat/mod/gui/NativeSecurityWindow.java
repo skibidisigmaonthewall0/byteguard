@@ -1,6 +1,5 @@
 package com.antirat.mod.gui;
 
-import com.antirat.mod.config.SettingsStorage;
 import com.antirat.mod.manager.PermissionManager;
 import com.antirat.mod.manager.QuarantineManager;
 import com.antirat.mod.scanner.SecurityScanner;
@@ -9,69 +8,79 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
 import java.awt.*;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
+import java.awt.event.*;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Premium Modern Dark-Theme Security Suite Window.
- * Features Pre-Launch Gate, Multi-Select Mod Whitelist manager, and original button toolbar layout.
+ * ByteGuard Pre-Launch Security Suite.
+ *
+ * Phase 1: Deep Scanning Progress Screen (animates for 10-15 seconds while scan runs in background).
+ * Phase 2: Full Gate Window showing ALL scanned mods (clean and suspicious) with action buttons.
  */
 public class NativeSecurityWindow {
 
-    private static final Color COLOR_BG = new Color(18, 20, 26);
-    private static final Color COLOR_PANEL = new Color(26, 29, 38);
-    private static final Color COLOR_CARD = new Color(34, 38, 50);
-    private static final Color COLOR_TEXT = new Color(240, 243, 246);
-    private static final Color COLOR_TEXT_MUTED = new Color(140, 148, 165);
-    private static final Color COLOR_ACCENT = new Color(0, 230, 180);
-    private static final Color COLOR_RED = new Color(245, 65, 85);
-    private static final Color COLOR_RED_HOVER = new Color(255, 95, 115);
-    private static final Color COLOR_ORANGE = new Color(255, 145, 0);
-    private static final Color COLOR_ORANGE_HOVER = new Color(255, 175, 30);
-    private static final Color COLOR_GREEN = new Color(0, 190, 110);
-    private static final Color COLOR_GREEN_HOVER = new Color(30, 220, 140);
+    // ── Colour Palette ──────────────────────────────────────────────────────
+    private static final Color BG         = new Color(13, 14, 20);
+    private static final Color PANEL      = new Color(22, 25, 35);
+    private static final Color CARD       = new Color(30, 34, 48);
+    private static final Color BORDER     = new Color(40, 46, 65);
+    private static final Color TEXT       = new Color(235, 240, 248);
+    private static final Color MUTED      = new Color(120, 130, 155);
+    private static final Color ACCENT     = new Color(0, 230, 175);
+    private static final Color RED        = new Color(240, 55, 80);
+    private static final Color RED_H      = new Color(255, 85, 110);
+    private static final Color ORANGE     = new Color(255, 148, 0);
+    private static final Color ORANGE_H   = new Color(255, 178, 35);
+    private static final Color GREEN      = new Color(0, 195, 110);
+    private static final Color GREEN_H    = new Color(30, 225, 140);
+    private static final Color BLUE       = new Color(50, 85, 185);
+    private static final Color BLUE_H     = new Color(75, 120, 235);
 
-    /**
-     * Modern Animated Hover Button with smooth cursor feedback and custom rounded background painting.
-     */
+    // ── Scanning progress steps shown to user ──────────────────────────────
+    private static final String[] SCAN_STEPS = {
+        "Initializing ByteGuard Security Engine...",
+        "Loading known malware hash database...",
+        "Loading threat signature rules...",
+        "Mapping JAR file entries...",
+        "Deobfuscating bytecode (XOR / Arithmetic chains)...",
+        "Deep-scanning class bytecode for RAT indicators...",
+        "Analyzing string constants & URL patterns...",
+        "Scanning for C2 callbacks & raw IP addresses...",
+        "Checking Discord / Telegram webhook tokens...",
+        "Analyzing ClassLoader & reflection injection vectors...",
+        "Scanning for keyloggers & screen capture methods...",
+        "Checking crypto wallet & browser credential paths...",
+        "Running dynamic malware rule engine...",
+        "Evaluating JAR-in-JAR nested libraries...",
+        "Calculating suspicion scores...",
+        "Cross-referencing Fractureiser / EtherHiding signatures...",
+        "Applying open-source mod trust verification...",
+        "Finalizing threat report..."
+    };
+
+    // ── Animated Hover Button ───────────────────────────────────────────────
     public static class AnimatedHoverButton extends JButton {
-        private final Color normalBg;
-        private final Color hoverBg;
+        private final Color norm, hov;
 
-        public AnimatedHoverButton(String text, Color normalBg, Color hoverBg) {
+        public AnimatedHoverButton(String text, Color norm, Color hov) {
             super(text);
-            this.normalBg = normalBg;
-            this.hoverBg = hoverBg;
-
+            this.norm = norm;
+            this.hov = hov;
             setFont(new Font("Segoe UI", Font.BOLD, 12));
             setForeground(Color.WHITE);
-            setBackground(normalBg);
+            setBackground(norm);
             setFocusPainted(false);
             setContentAreaFilled(false);
             setOpaque(false);
-            setBorder(new EmptyBorder(8, 16, 8, 16));
+            setBorder(new EmptyBorder(8, 18, 8, 18));
             setCursor(new Cursor(Cursor.HAND_CURSOR));
-
             addMouseListener(new MouseAdapter() {
-                @Override
-                public void mouseEntered(MouseEvent e) {
-                    if (isEnabled()) {
-                        setBackground(hoverBg);
-                        repaint();
-                    }
-                }
-
-                @Override
-                public void mouseExited(MouseEvent e) {
-                    if (isEnabled()) {
-                        setBackground(normalBg);
-                        repaint();
-                    }
-                }
+                public void mouseEntered(MouseEvent e) { if (isEnabled()) { setBackground(hov); repaint(); } }
+                public void mouseExited(MouseEvent e)  { if (isEnabled()) { setBackground(norm); repaint(); } }
             });
         }
 
@@ -80,363 +89,520 @@ public class NativeSecurityWindow {
             Graphics2D g2 = (Graphics2D) g.create();
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
             g2.setColor(getBackground());
-            g2.fillRoundRect(0, 0, getWidth(), getHeight(), 8, 8);
-            g2.setColor(getBackground().brighter());
-            g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 8, 8);
+            g2.fillRoundRect(0, 0, getWidth(), getHeight(), 10, 10);
+            g2.setColor(getBackground().brighter().brighter());
+            g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 10, 10);
             g2.dispose();
-
             super.paintComponent(g);
         }
     }
 
-    public static void showPreLaunchWindow(List<SecurityScanner.SecurityReport> activeReports) {
-        displayGateWindow(activeReports);
-    }
+    // ── Public API ──────────────────────────────────────────────────────────
 
-    public static void displayGateWindow(List<SecurityScanner.SecurityReport> activeReports) {
-        if (activeReports == null || activeReports.isEmpty()) {
-            return;
-        }
-
+    /** Called by AntiRAT.onPreLaunch(). Shows scanning screen, deep scans, then shows gate. Blocks until resolved. */
+    public static void showScanningAndGate(File[] jarFiles, File gameDir) {
         CountDownLatch latch = new CountDownLatch(1);
-        openSecurityGate(activeReports, latch);
 
-        try {
-            System.out.println("[ByteGuard] Pausing game startup thread until user resolves Pre-Launch Security Gate window...");
-            latch.await();
-            System.out.println("[ByteGuard] User decision received. Resuming startup sequence...");
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        SwingUtilities.invokeLater(() -> {
+            try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); } catch (Exception ignored) {}
+            showScanPhase(jarFiles, gameDir, latch);
+        });
+
+        try { latch.await(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
     }
 
-    private static void openSecurityGate(List<SecurityScanner.SecurityReport> activeReports, CountDownLatch latch) {
-        SwingUtilities.invokeLater(() -> {
-            try {
-                UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-            } catch (Exception ignored) {}
+    /** Legacy compat */
+    public static void showPreLaunchWindow(List<SecurityScanner.SecurityReport> reports) {
+        CountDownLatch latch = new CountDownLatch(1);
+        SwingUtilities.invokeLater(() -> openGate(reports, latch));
+        try { latch.await(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+    }
 
-            JDialog frame = new JDialog((Frame) null, "ByteGuard Pre-Launch Security Suite", true);
-            frame.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
-            frame.setSize(940, 640);
-            frame.setLocationRelativeTo(null);
+    /** Legacy compat */
+    public static void displayGateWindow(List<SecurityScanner.SecurityReport> reports) {
+        showPreLaunchWindow(reports);
+    }
 
-            JPanel mainPanel = new JPanel(new BorderLayout(12, 12));
-            mainPanel.setBackground(COLOR_BG);
-            mainPanel.setBorder(new EmptyBorder(16, 16, 16, 16));
+    // ── Phase 1: Scanning Screen ────────────────────────────────────────────
 
-            // Header Banner
-            JPanel headerPanel = new JPanel(new BorderLayout(8, 8));
-            headerPanel.setBackground(COLOR_PANEL);
-            headerPanel.setBorder(BorderFactory.createCompoundBorder(
-                new LineBorder(COLOR_CARD, 1, true),
-                new EmptyBorder(12, 16, 12, 16)
-            ));
+    private static void showScanPhase(File[] jarFiles, File gameDir, CountDownLatch outerLatch) {
+        JDialog scanDialog = new JDialog((Frame) null, "ByteGuard — Deep Scanning...", false);
+        scanDialog.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
+        scanDialog.setSize(720, 440);
+        scanDialog.setLocationRelativeTo(null);
+        scanDialog.setResizable(false);
 
-            JLabel titleLabel = new JLabel(
-                "<html><span style='font-family:Segoe UI Emoji;font-size:16pt;'>🛡</span>"
-                + "<span style='font-family:Segoe UI;font-weight:bold;font-size:14pt;'> BYTEGUARD SECURITY SUITE &mdash; PRE-LAUNCH GATE</span></html>",
-                SwingConstants.LEFT
-            );
-            titleLabel.setForeground(COLOR_ACCENT);
+        JPanel root = new JPanel(new BorderLayout(0, 0)) {
+            @Override protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g;
+                g2.setColor(BG);
+                g2.fillRect(0, 0, getWidth(), getHeight());
+            }
+        };
+        root.setOpaque(false);
+        root.setBorder(new EmptyBorder(32, 40, 32, 40));
 
-            JLabel subtitleLabel = new JLabel("Minecraft loading is paused. Developed by MarkDev1337 | ByteGuard Security Engine", SwingConstants.LEFT);
-            subtitleLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-            subtitleLabel.setForeground(COLOR_TEXT_MUTED);
+        // Header
+        JLabel icon = new JLabel("🛡", SwingConstants.CENTER);
+        icon.setFont(new Font("Segoe UI Emoji", Font.PLAIN, 42));
+        icon.setForeground(ACCENT);
 
-            headerPanel.add(titleLabel, BorderLayout.NORTH);
-            headerPanel.add(subtitleLabel, BorderLayout.SOUTH);
-            mainPanel.add(headerPanel, BorderLayout.NORTH);
+        JLabel title = new JLabel("BYTEGUARD DEEP SCAN", SwingConstants.CENTER);
+        title.setFont(new Font("Segoe UI", Font.BOLD, 22));
+        title.setForeground(ACCENT);
 
-            // Tabbed Pane
-            JTabbedPane tabbedPane = new JTabbedPane();
-            tabbedPane.setFont(new Font("Segoe UI", Font.BOLD, 12));
-            tabbedPane.setBackground(COLOR_PANEL);
+        JLabel sub = new JLabel("Analyzing all mods — please wait...", SwingConstants.CENTER);
+        sub.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        sub.setForeground(MUTED);
 
-            // ── 1. Reports Tab ──────────────────────────────────────────────────
-            JPanel reportsTab = new JPanel(new BorderLayout(10, 10));
-            reportsTab.setBackground(COLOR_PANEL);
-            reportsTab.setBorder(new EmptyBorder(10, 10, 10, 10));
+        JPanel topPanel = new JPanel(new GridLayout(3, 1, 6, 6));
+        topPanel.setOpaque(false);
+        topPanel.add(icon);
+        topPanel.add(title);
+        topPanel.add(sub);
+        root.add(topPanel, BorderLayout.NORTH);
 
-            DefaultListModel<String> listModel = new DefaultListModel<>();
-            for (SecurityScanner.SecurityReport rep : activeReports) {
-                int displayScore = Math.min(100, rep.suspicionScore);
-                listModel.addElement(String.format("[!] %s (%s) — Score: %d/100", rep.metadata.getName(),
-                    rep.metadata.getJarFile() != null ? rep.metadata.getJarFile().getName() : "jar", displayScore));
+        // Center — current step label + scrolling log
+        JPanel centerPanel = new JPanel(new BorderLayout(0, 12));
+        centerPanel.setOpaque(false);
+        centerPanel.setBorder(new EmptyBorder(20, 0, 20, 0));
+
+        JLabel currentStep = new JLabel("Initializing...", SwingConstants.LEFT);
+        currentStep.setFont(new Font("Consolas", Font.BOLD, 12));
+        currentStep.setForeground(ACCENT);
+
+        JTextArea logArea = new JTextArea();
+        logArea.setEditable(false);
+        logArea.setBackground(CARD);
+        logArea.setForeground(new Color(160, 200, 160));
+        logArea.setFont(new Font("Consolas", Font.PLAIN, 11));
+        logArea.setBorder(new EmptyBorder(8, 10, 8, 10));
+        JScrollPane logScroll = new JScrollPane(logArea);
+        logScroll.setBorder(new LineBorder(BORDER, 1));
+        logScroll.setPreferredSize(new Dimension(640, 160));
+
+        centerPanel.add(currentStep, BorderLayout.NORTH);
+        centerPanel.add(logScroll, BorderLayout.CENTER);
+        root.add(centerPanel, BorderLayout.CENTER);
+
+        // Bottom — progress bar + jar count
+        JProgressBar progressBar = new JProgressBar(0, 100) {
+            @Override protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                // Background
+                g2.setColor(CARD);
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 8, 8);
+                // Fill
+                int fillW = (int) (getWidth() * (getValue() / 100.0));
+                if (fillW > 0) {
+                    g2.setColor(ACCENT);
+                    g2.fillRoundRect(0, 0, fillW, getHeight(), 8, 8);
+                }
+                // Text
+                g2.setColor(Color.WHITE);
+                g2.setFont(new Font("Segoe UI", Font.BOLD, 11));
+                String txt = getValue() + "%";
+                FontMetrics fm = g2.getFontMetrics();
+                g2.drawString(txt, (getWidth() - fm.stringWidth(txt)) / 2, (getHeight() + fm.getAscent() - fm.getDescent()) / 2);
+                g2.dispose();
+            }
+        };
+        progressBar.setStringPainted(false);
+        progressBar.setBorder(null);
+        progressBar.setPreferredSize(new Dimension(640, 18));
+
+        JLabel countLabel = new JLabel("Scanning 0 / " + jarFiles.length + " mods...", SwingConstants.CENTER);
+        countLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        countLabel.setForeground(MUTED);
+
+        JPanel bottomPanel = new JPanel(new GridLayout(2, 1, 4, 4));
+        bottomPanel.setOpaque(false);
+        bottomPanel.add(progressBar);
+        bottomPanel.add(countLabel);
+        root.add(bottomPanel, BorderLayout.SOUTH);
+
+        scanDialog.add(root);
+        scanDialog.setVisible(true);
+
+        // ── Background scan thread ─────────────────────────────────────────
+        List<SecurityScanner.SecurityReport> allReports = new ArrayList<>();
+        AtomicInteger doneCount = new AtomicInteger(0);
+
+        new Thread(() -> {
+            // Phase A: simulate initial steps for 3 seconds before actual scanning
+            int stepDelay = 180;
+            for (int i = 0; i < 8; i++) {
+                final String step = SCAN_STEPS[i];
+                final int pct = (i * 5);
+                SwingUtilities.invokeLater(() -> {
+                    currentStep.setText("▶  " + step);
+                    logArea.append("[" + timestamp() + "] " + step + "\n");
+                    logArea.setCaretPosition(logArea.getDocument().getLength());
+                    progressBar.setValue(pct);
+                });
+                sleep(stepDelay);
             }
 
-            JList<String> reportJList = new JList<>(listModel);
-            reportJList.setBackground(COLOR_BG);
-            reportJList.setForeground(COLOR_TEXT);
-            reportJList.setSelectionBackground(new Color(45, 65, 95));
-            reportJList.setSelectionForeground(COLOR_ACCENT);
-            reportJList.setFont(new Font("Segoe UI", Font.BOLD, 13));
-
-            JTextArea detailsArea = new JTextArea();
-            detailsArea.setEditable(false);
-            detailsArea.setLineWrap(true);
-            detailsArea.setWrapStyleWord(true);
-            detailsArea.setBackground(COLOR_BG);
-            detailsArea.setForeground(COLOR_TEXT);
-            detailsArea.setFont(new Font("Consolas", Font.PLAIN, 12));
-            detailsArea.setBorder(new EmptyBorder(10, 10, 10, 10));
-
-            Runnable updateDetails = () -> {
-                int idx = reportJList.getSelectedIndex();
-                if (idx >= 0 && idx < activeReports.size()) {
-                    SecurityScanner.SecurityReport r = activeReports.get(idx);
-                    int displayScore = Math.min(100, r.suspicionScore);
-
-                    StringBuilder sb = new StringBuilder();
-                    sb.append("====================================================\n");
-                    sb.append("  MOD SECURITY ANALYSIS REPORT\n");
-                    sb.append("====================================================\n");
-                    sb.append("Mod Name         : ").append(r.metadata.getName()).append("\n");
-                    sb.append("Mod ID           : ").append(r.metadata.getModId()).append("\n");
-                    sb.append("JAR File         : ").append(r.metadata.getJarFile() != null ? r.metadata.getJarFile().getName() : "Unknown").append("\n");
-                    sb.append("Suspicion Level  : ").append(r.suspicionLevel.label).append(" (Score: ").append(displayScore).append("/100)\n");
-                    sb.append("Obfuscation Score: ").append(r.obfuscationResult.score).append("/100\n");
-
-                    if (r.metadata.getJarFile() != null) {
-                        try {
-                            String sha256 = com.antirat.mod.scanner.ThreatDatabase.sha256Hex(r.metadata.getJarFile());
-                            sb.append("SHA-256          : ").append(sha256).append("\n");
-                        } catch (Exception ignored) {}
-                    }
-                    sb.append("\nDETECTED CAPABILITIES:\n");
-                    for (String cap : r.detectedCapabilities) {
-                        String prefix = cap.startsWith("!!") ? "  [CRITICAL] " : "  [!] ";
-                        sb.append(prefix).append(cap).append("\n");
-                    }
-
-                    sb.append("\nEXTRACTED / DEOBFUSCATED STRINGS:\n");
-                    for (String str : r.flaggedStrings) {
-                        sb.append("  >> \"").append(str).append("\"\n");
-                    }
-
-                    sb.append("\nFLAGGED REASONS:\n");
-                    for (String reason : r.flaggedReasons) {
-                        sb.append("  - ").append(reason).append("\n");
-                    }
-
-                    detailsArea.setText(sb.toString());
-                    detailsArea.setCaretPosition(0);
-                } else {
-                    detailsArea.setText("No mod selected.");
+            // Phase B: actual scan of all JARs
+            int total = jarFiles.length;
+            for (int i = 0; i < total; i++) {
+                File jar = jarFiles[i];
+                String jName = jar.getName().toLowerCase();
+                if (jName.contains("byteguard") || jName.contains("antirat")) {
+                    doneCount.incrementAndGet();
+                    continue;
                 }
-            };
 
-            reportJList.addListSelectionListener(e -> updateDetails.run());
+                final String scanning = "Scanning: " + jar.getName();
+                final int idx = i;
+                SwingUtilities.invokeLater(() -> {
+                    currentStep.setText("▶  " + scanning);
+                    logArea.append("[" + timestamp() + "] " + scanning + "\n");
+                    logArea.setCaretPosition(logArea.getDocument().getLength());
+                    int pct = 40 + (int)((idx / (double) total) * 45);
+                    progressBar.setValue(pct);
+                    countLabel.setText("Scanning " + (idx + 1) + " / " + total + " mods...");
+                });
 
-            if (!activeReports.isEmpty()) {
-                reportJList.setSelectedIndex(0);
-                updateDetails.run();
+                SecurityScanner.SecurityReport report = SecurityScanner.scanJar(jar);
+                System.out.printf("[ByteGuard Scan] %s | %s | Score: %d%n",
+                    jar.getName(), report.suspicionLevel.label, report.suspicionScore);
+
+                if (report.suspicionLevel != SecurityScanner.SuspicionLevel.CLEAN) {
+                    QuarantineManager.addQuarantinedReport(report);
+                }
+                allReports.add(report);
+                doneCount.incrementAndGet();
+
+                // Minimum visual time per jar
+                sleep(60);
             }
 
-            JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, new JScrollPane(reportJList), new JScrollPane(detailsArea));
-            splitPane.setDividerLocation(320);
-            reportsTab.add(splitPane, BorderLayout.CENTER);
-            tabbedPane.addTab("Scanned Mods (" + activeReports.size() + ")", reportsTab);
-
-            // ── 2. Security Controls & Mod Whitelist Manager Tab ────────────────
-            JPanel configTab = new JPanel(new BorderLayout(14, 14));
-            configTab.setBackground(COLOR_PANEL);
-            configTab.setBorder(new EmptyBorder(16, 16, 16, 16));
-
-            JPanel topOptions = new JPanel(new GridLayout(2, 1, 8, 8));
-            topOptions.setOpaque(false);
-
-            JCheckBox safeModeBox = new JCheckBox("Safe Mode (Auto-Deny All Suspicious File & Process Actions)", PermissionManager.isSafeMode());
-            safeModeBox.setFont(new Font("Segoe UI", Font.BOLD, 13));
-            safeModeBox.setBackground(COLOR_PANEL);
-            safeModeBox.setForeground(COLOR_TEXT);
-            safeModeBox.addActionListener(e -> PermissionManager.setSafeMode(safeModeBox.isSelected()));
-
-            JCheckBox killSwitchBox = new JCheckBox("Emergency Kill Switch (Block All System Access Instantly)", PermissionManager.isKillSwitchActive());
-            killSwitchBox.setFont(new Font("Segoe UI", Font.BOLD, 13));
-            killSwitchBox.setBackground(COLOR_PANEL);
-            killSwitchBox.setForeground(COLOR_RED);
-            killSwitchBox.addActionListener(e -> PermissionManager.setKillSwitch(killSwitchBox.isSelected()));
-
-            topOptions.add(safeModeBox);
-            topOptions.add(killSwitchBox);
-            configTab.add(topOptions, BorderLayout.NORTH);
-
-            // Batch Mod Whitelist Section (Supports selecting 2 or more mods at once)
-            JPanel whitelistSection = new JPanel(new BorderLayout(8, 8));
-            whitelistSection.setBackground(COLOR_CARD);
-            whitelistSection.setBorder(BorderFactory.createCompoundBorder(
-                new LineBorder(COLOR_BG, 1, true),
-                new EmptyBorder(12, 12, 12, 12)
-            ));
-
-            JLabel wlHeader = new JLabel("🛡️ Mod Whitelist Manager (Select 2 or more mods to whitelist):");
-            wlHeader.setFont(new Font("Segoe UI", Font.BOLD, 13));
-            wlHeader.setForeground(COLOR_ACCENT);
-
-            JLabel wlTip = new JLabel("💡 Multi-Select Enabled: Hold Ctrl or Shift (or drag) to select 2 or more mods at once.");
-            wlTip.setFont(new Font("Segoe UI", Font.ITALIC, 11));
-            wlTip.setForeground(COLOR_TEXT_MUTED);
-
-            JPanel wlHeaderPanel = new JPanel(new GridLayout(2, 1, 4, 4));
-            wlHeaderPanel.setOpaque(false);
-            wlHeaderPanel.add(wlHeader);
-            wlHeaderPanel.add(wlTip);
-
-            DefaultListModel<String> wlListModel = new DefaultListModel<>();
-            for (SecurityScanner.SecurityReport rep : activeReports) {
-                if (rep.metadata.getModId() != null) {
-                    String status = PermissionManager.isWhitelisted(rep.metadata.getModId()) ? "[WHITELISTED] " : "";
-                    wlListModel.addElement(status + rep.metadata.getName() + " (" + rep.metadata.getModId() + ")");
-                }
+            // Phase C: finalising steps
+            for (int i = 8; i < SCAN_STEPS.length; i++) {
+                final String step = SCAN_STEPS[i];
+                final int pct = 85 + ((i - 8) * 1);
+                SwingUtilities.invokeLater(() -> {
+                    currentStep.setText("▶  " + step);
+                    logArea.append("[" + timestamp() + "] " + step + "\n");
+                    logArea.setCaretPosition(logArea.getDocument().getLength());
+                    progressBar.setValue(Math.min(pct, 98));
+                });
+                sleep(300);
             }
 
-            JList<String> wlJList = new JList<>(wlListModel);
-            wlJList.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
-            wlJList.setBackground(COLOR_BG);
-            wlJList.setForeground(COLOR_TEXT);
-            wlJList.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+            // Minimum total scan time = 10 seconds
+            long elapsed = System.currentTimeMillis();
+            long minimumMs = 10_000;
+            long remaining = minimumMs - (System.currentTimeMillis() - elapsed);
+            if (remaining > 0) sleep(remaining);
 
-            AnimatedHoverButton batchWhitelistBtn = new AnimatedHoverButton("🛡️ Whitelist Selected Mods", new Color(0, 150, 120), COLOR_ACCENT);
-            batchWhitelistBtn.addActionListener(e -> {
-                int[] selectedIndices = wlJList.getSelectedIndices();
-                if (selectedIndices.length == 0) {
-                    JOptionPane.showMessageDialog(frame, "Please select at least one mod from the list to whitelist.", "No Selection", JOptionPane.WARNING_MESSAGE);
-                    return;
-                }
-                int addedCount = 0;
-                for (int i : selectedIndices) {
-                    if (i >= 0 && i < activeReports.size()) {
-                        SecurityScanner.SecurityReport rep = activeReports.get(i);
-                        if (rep.metadata.getModId() != null) {
-                            PermissionManager.addToWhitelist(rep.metadata.getModId());
-                            addedCount++;
-                        }
+            SwingUtilities.invokeLater(() -> {
+                progressBar.setValue(100);
+                currentStep.setText("✅  Scan complete! Opening security report...");
+                logArea.append("[" + timestamp() + "] Scan complete. " + allReports.size() + " mods analyzed.\n");
+                logArea.setCaretPosition(logArea.getDocument().getLength());
+                countLabel.setText("Complete — " + allReports.size() + " mods scanned.");
+            });
+
+            sleep(800);
+
+            // Sort: flagged first, then by score desc
+            allReports.sort((a, b) -> {
+                int lvlA = a.suspicionLevel.ordinal();
+                int lvlB = b.suspicionLevel.ordinal();
+                if (lvlA != lvlB) return lvlB - lvlA;
+                return b.suspicionScore - a.suspicionScore;
+            });
+
+            SwingUtilities.invokeLater(() -> {
+                scanDialog.dispose();
+                openGate(allReports, outerLatch);
+            });
+
+        }, "ByteGuard-DeepScan").start();
+    }
+
+    private static String timestamp() {
+        java.time.LocalTime t = java.time.LocalTime.now();
+        return String.format("%02d:%02d:%02d", t.getHour(), t.getMinute(), t.getSecond());
+    }
+
+    private static void sleep(long ms) {
+        if (ms <= 0) return;
+        try { Thread.sleep(ms); } catch (InterruptedException ignored) {}
+    }
+
+    // ── Phase 2: Full Security Gate ─────────────────────────────────────────
+
+    private static void openGate(List<SecurityScanner.SecurityReport> allReports, CountDownLatch latch) {
+        JDialog frame = new JDialog((Frame) null, "ByteGuard Pre-Launch Security Suite", true);
+        frame.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
+        frame.setSize(1050, 660);
+        frame.setLocationRelativeTo(null);
+
+        JPanel mainPanel = new JPanel(new BorderLayout(12, 12));
+        mainPanel.setBackground(BG);
+        mainPanel.setBorder(new EmptyBorder(14, 14, 14, 14));
+
+        // Header
+        JPanel header = new JPanel(new BorderLayout(8, 4));
+        header.setBackground(PANEL);
+        header.setBorder(BorderFactory.createCompoundBorder(
+            new LineBorder(BORDER, 1, true), new EmptyBorder(12, 16, 12, 16)
+        ));
+        JLabel htitle = new JLabel(
+            "<html><span style='font-size:15pt;color:#00e6af;font-family:Segoe UI;font-weight:bold;'>🛡 BYTEGUARD SECURITY SUITE &mdash; PRE-LAUNCH GATE</span></html>");
+        JLabel hsub = new JLabel("Minecraft loading is paused. Developed by MarkDev1337 | ByteGuard Security Engine");
+        hsub.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        hsub.setForeground(MUTED);
+
+        long flagged = allReports.stream().filter(r -> r.suspicionLevel != SecurityScanner.SuspicionLevel.CLEAN).count();
+        JLabel hcount = new JLabel(allReports.size() + " mods scanned — " + flagged + " suspicious", SwingConstants.RIGHT);
+        hcount.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        hcount.setForeground(flagged > 0 ? RED : GREEN);
+
+        header.add(htitle, BorderLayout.NORTH);
+        header.add(hsub, BorderLayout.SOUTH);
+        header.add(hcount, BorderLayout.EAST);
+        mainPanel.add(header, BorderLayout.NORTH);
+
+        // Tabs
+        JTabbedPane tabs = new JTabbedPane();
+        tabs.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        tabs.setBackground(PANEL);
+
+        // ── Tab 1: All Mods ────────────────────────────────────────────────
+        JPanel reportsTab = new JPanel(new BorderLayout(10, 10));
+        reportsTab.setBackground(PANEL);
+        reportsTab.setBorder(new EmptyBorder(10, 10, 10, 10));
+
+        DefaultListModel<String> listModel = new DefaultListModel<>();
+        for (SecurityScanner.SecurityReport rep : allReports) {
+            int s = Math.min(100, rep.suspicionScore);
+            String prefix = rep.suspicionLevel == SecurityScanner.SuspicionLevel.CLEAN ? "[✓]" : "[!]";
+            listModel.addElement(String.format("%s %s — %s (%d/100)",
+                prefix, rep.metadata.getName(), rep.suspicionLevel.label, s));
+        }
+
+        JList<String> modList = new JList<>(listModel);
+        modList.setBackground(BG);
+        modList.setForeground(TEXT);
+        modList.setSelectionBackground(new Color(40, 60, 90));
+        modList.setSelectionForeground(ACCENT);
+        modList.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        modList.setCellRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (!isSelected && index < allReports.size()) {
+                    SecurityScanner.SuspicionLevel lvl = allReports.get(index).suspicionLevel;
+                    switch (lvl) {
+                        case CRITICAL -> setForeground(new Color(255, 80, 110));
+                        case HIGH     -> setForeground(new Color(255, 120, 50));
+                        case MEDIUM   -> setForeground(ORANGE);
+                        case LOW      -> setForeground(new Color(230, 210, 60));
+                        case CLEAN    -> setForeground(new Color(100, 200, 140));
                     }
                 }
-                JOptionPane.showMessageDialog(frame, addedCount + " mod(s) have been added to your Whitelist!\nThey will evaluate to 0/100 CLEAN on launch.", "Whitelist Saved", JOptionPane.INFORMATION_MESSAGE);
-            });
-
-            whitelistSection.add(wlHeaderPanel, BorderLayout.NORTH);
-            whitelistSection.add(new JScrollPane(wlJList), BorderLayout.CENTER);
-            whitelistSection.add(batchWhitelistBtn, BorderLayout.SOUTH);
-
-            configTab.add(whitelistSection, BorderLayout.CENTER);
-            tabbedPane.addTab("Security Controls", configTab);
-
-            mainPanel.add(tabbedPane, BorderLayout.CENTER);
-
-            // Bottom Action Buttons Panel (Original Layout Restored)
-            JPanel actionPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 12, 10));
-            actionPanel.setBackground(COLOR_BG);
-
-            AnimatedHoverButton scanAgainBtn = new AnimatedHoverButton("Scan Again", new Color(50, 80, 160), new Color(70, 110, 210));
-            scanAgainBtn.addActionListener(e -> {
-                scanAgainBtn.setText("Scanning...");
-                scanAgainBtn.setEnabled(false);
-                new Thread(() -> {
-                    try {
-                        File modsDir = null;
-                        if (!activeReports.isEmpty() && activeReports.get(0).metadata.getJarFile() != null) {
-                            modsDir = activeReports.get(0).metadata.getJarFile().getParentFile();
-                        }
-                        if (modsDir == null || !modsDir.exists()) return;
-
-                        List<SecurityScanner.SecurityReport> freshReports = new ArrayList<>();
-                        File[] files = modsDir.listFiles((d, n) -> n.endsWith(".jar"));
-                        if (files != null) {
-                            for (File jar : files) {
-                                String n = jar.getName().toLowerCase();
-                                if (n.contains("byteguard") || n.contains("antirat")) continue;
-                                SecurityScanner.SecurityReport report = SecurityScanner.scanJar(jar);
-                                if (report.suspicionLevel == SecurityScanner.SuspicionLevel.HIGH ||
-                                    report.suspicionLevel == SecurityScanner.SuspicionLevel.CRITICAL) {
-                                    freshReports.add(report);
-                                }
-                            }
-                        }
-
-                        SwingUtilities.invokeLater(() -> {
-                            activeReports.clear();
-                            activeReports.addAll(freshReports);
-                            listModel.clear();
-                            for (SecurityScanner.SecurityReport fr : activeReports) {
-                                int score = Math.min(100, fr.suspicionScore);
-                                listModel.addElement(String.format("[!] %s (%s) — Score: %d/100", fr.metadata.getName(),
-                                    fr.metadata.getJarFile() != null ? fr.metadata.getJarFile().getName() : "jar", score));
-                            }
-                            tabbedPane.setTitleAt(0, "Scanned Mods (" + activeReports.size() + ")");
-                            scanAgainBtn.setText("Scan Again");
-                            scanAgainBtn.setEnabled(true);
-                            if (!activeReports.isEmpty()) {
-                                reportJList.setSelectedIndex(0);
-                            }
-                        });
-                    } catch (Exception ex) {
-                        SwingUtilities.invokeLater(() -> {
-                            scanAgainBtn.setText("Scan Again");
-                            scanAgainBtn.setEnabled(true);
-                        });
-                    }
-                }, "ByteGuard-Rescan").start();
-            });
-
-            AnimatedHoverButton allowSelectedBtn = new AnimatedHoverButton("Allow Selected Mod", COLOR_GREEN, COLOR_GREEN_HOVER);
-            allowSelectedBtn.addActionListener(e -> {
-                int idx = reportJList.getSelectedIndex();
-                if (idx >= 0 && idx < activeReports.size()) {
-                    activeReports.remove(idx);
-                    listModel.remove(idx);
-                    if (activeReports.isEmpty()) {
-                        frame.dispose();
-                        latch.countDown();
-                    } else {
-                        reportJList.setSelectedIndex(Math.min(idx, activeReports.size() - 1));
-                        tabbedPane.setTitleAt(0, "Scanned Mods (" + activeReports.size() + ")");
-                    }
-                }
-            });
-
-            AnimatedHoverButton quarantineSelectedBtn = new AnimatedHoverButton("Quarantine Selected & Exit", COLOR_ORANGE, COLOR_ORANGE_HOVER);
-            quarantineSelectedBtn.addActionListener(e -> {
-                int idx = reportJList.getSelectedIndex();
-                if (idx >= 0 && idx < activeReports.size()) {
-                    SecurityScanner.SecurityReport rep = activeReports.get(idx);
-                    if (rep.metadata.getJarFile() != null) {
-                        QuarantineManager.moveJarToQuarantine(rep.metadata.getJarFile());
-                    }
-                    JOptionPane.showMessageDialog(frame, "Mod " + rep.metadata.getName() + " moved to .minecraft/quarantine.\nMinecraft will now shut down to prevent execution.", "Quarantine Complete", JOptionPane.WARNING_MESSAGE);
-                    System.exit(0);
-                }
-            });
-
-            AnimatedHoverButton quarantineAllBtn = new AnimatedHoverButton("Quarantine ALL Mods & Exit", new Color(190, 50, 20), COLOR_RED_HOVER);
-            quarantineAllBtn.addActionListener(e -> {
-                for (SecurityScanner.SecurityReport rep : activeReports) {
-                    if (rep.metadata.getJarFile() != null) {
-                        QuarantineManager.moveJarToQuarantine(rep.metadata.getJarFile());
-                    }
-                }
-                JOptionPane.showMessageDialog(frame, "All flagged mods moved to .minecraft/quarantine.\nMinecraft will now shut down to protect your system.", "Quarantine Complete", JOptionPane.WARNING_MESSAGE);
-                System.exit(0);
-            });
-
-            AnimatedHoverButton exitBtn = new AnimatedHoverButton("Terminate Minecraft", COLOR_RED, COLOR_RED_HOVER);
-            exitBtn.addActionListener(e -> {
-                System.out.println("[ByteGuard] User terminated Minecraft execution from Security Gate.");
-                System.exit(0);
-            });
-
-            actionPanel.add(scanAgainBtn);
-            actionPanel.add(allowSelectedBtn);
-            actionPanel.add(quarantineSelectedBtn);
-            actionPanel.add(quarantineAllBtn);
-            actionPanel.add(exitBtn);
-
-            mainPanel.add(actionPanel, BorderLayout.SOUTH);
-
-            frame.add(mainPanel);
-            frame.setVisible(true);
+                setBackground(isSelected ? new Color(40, 60, 90) : BG);
+                setBorder(new EmptyBorder(3, 8, 3, 8));
+                return this;
+            }
         });
+
+        JLabel detailTitle = new JLabel("Select a mod to view report", SwingConstants.LEFT);
+        detailTitle.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        detailTitle.setForeground(TEXT);
+        detailTitle.setBorder(new EmptyBorder(0, 0, 6, 0));
+
+        JTextArea detailArea = new JTextArea();
+        detailArea.setEditable(false);
+        detailArea.setLineWrap(true);
+        detailArea.setWrapStyleWord(true);
+        detailArea.setBackground(BG);
+        detailArea.setForeground(TEXT);
+        detailArea.setFont(new Font("Consolas", Font.PLAIN, 12));
+        detailArea.setBorder(new EmptyBorder(10, 10, 10, 10));
+
+        JPanel detailPanel = new JPanel(new BorderLayout(6, 6));
+        detailPanel.setBackground(BG);
+        detailPanel.add(detailTitle, BorderLayout.NORTH);
+        detailPanel.add(new JScrollPane(detailArea), BorderLayout.CENTER);
+
+        modList.addListSelectionListener(e -> {
+            int idx = modList.getSelectedIndex();
+            if (idx < 0 || idx >= allReports.size()) return;
+            SecurityScanner.SecurityReport r = allReports.get(idx);
+            int displayScore = Math.min(100, r.suspicionScore);
+            detailTitle.setText(r.metadata.getName() + " — " + r.suspicionLevel.label + " (" + displayScore + "/100)");
+
+            StringBuilder sb = new StringBuilder();
+            sb.append("====================================================\n");
+            sb.append("  MOD SECURITY ANALYSIS REPORT\n");
+            sb.append("====================================================\n");
+            sb.append("Mod Name         : ").append(r.metadata.getName()).append("\n");
+            sb.append("Mod ID           : ").append(r.metadata.getModId()).append("\n");
+            sb.append("JAR File         : ").append(r.metadata.getJarFile() != null ? r.metadata.getJarFile().getName() : "Unknown").append("\n");
+            sb.append("Suspicion Level  : ").append(r.suspicionLevel.label).append(" (Score: ").append(displayScore).append("/100)\n");
+            sb.append("Obfuscation Score: ").append(r.obfuscationResult.score).append("/100\n");
+            if (r.metadata.getJarFile() != null) {
+                try { sb.append("SHA-256          : ").append(com.antirat.mod.scanner.ThreatDatabase.sha256Hex(r.metadata.getJarFile())).append("\n"); }
+                catch (Exception ignored) {}
+            }
+            sb.append("\nDETECTED CAPABILITIES:\n");
+            for (String cap : r.detectedCapabilities) {
+                sb.append(cap.startsWith("!!") ? "  [CRITICAL] " : "  [!] ").append(cap).append("\n");
+            }
+            sb.append("\nEXTRACTED / DEOBFUSCATED STRINGS:\n");
+            for (String s : r.flaggedStrings) sb.append("  >> \"").append(s).append("\"\n");
+            sb.append("\nFLAGGED REASONS:\n");
+            for (String reason : r.flaggedReasons) sb.append("  - ").append(reason).append("\n");
+
+            detailArea.setText(sb.toString());
+            detailArea.setCaretPosition(0);
+        });
+
+        if (!allReports.isEmpty()) modList.setSelectedIndex(0);
+
+        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, new JScrollPane(modList), detailPanel);
+        split.setDividerLocation(340);
+        reportsTab.add(split, BorderLayout.CENTER);
+        tabs.addTab("All Mods (" + allReports.size() + ")", reportsTab);
+
+        // ── Tab 2: Security Controls & Whitelist ───────────────────────────
+        JPanel configTab = new JPanel(new BorderLayout(14, 14));
+        configTab.setBackground(PANEL);
+        configTab.setBorder(new EmptyBorder(16, 16, 16, 16));
+
+        JPanel toggles = new JPanel(new GridLayout(2, 1, 8, 8));
+        toggles.setOpaque(false);
+
+        JCheckBox safeModeBox = new JCheckBox("Safe Mode (Auto-Deny All Suspicious File & Process Actions)", com.antirat.mod.manager.PermissionManager.isSafeMode());
+        safeModeBox.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        safeModeBox.setBackground(PANEL);
+        safeModeBox.setForeground(TEXT);
+        safeModeBox.addActionListener(e -> PermissionManager.setSafeMode(safeModeBox.isSelected()));
+
+        JCheckBox killBox = new JCheckBox("Emergency Kill Switch (Block All System Access Instantly)", PermissionManager.isKillSwitchActive());
+        killBox.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        killBox.setBackground(PANEL);
+        killBox.setForeground(RED);
+        killBox.addActionListener(e -> PermissionManager.setKillSwitch(killBox.isSelected()));
+
+        toggles.add(safeModeBox);
+        toggles.add(killBox);
+        configTab.add(toggles, BorderLayout.NORTH);
+
+        // Whitelist section
+        JPanel wlSection = new JPanel(new BorderLayout(8, 8));
+        wlSection.setBackground(CARD);
+        wlSection.setBorder(BorderFactory.createCompoundBorder(
+            new LineBorder(BORDER, 1, true), new EmptyBorder(12, 12, 12, 12)
+        ));
+
+        JPanel wlTop = new JPanel(new GridLayout(2, 1, 4, 4));
+        wlTop.setOpaque(false);
+        JLabel wlTitle = new JLabel("🛡️ Mod Whitelist Manager — Select any mods to whitelist (0/100 CLEAN):");
+        wlTitle.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        wlTitle.setForeground(ACCENT);
+        JLabel wlTip = new JLabel("💡 Hold Ctrl or Shift to select multiple mods at once. Click drag also works.");
+        wlTip.setFont(new Font("Segoe UI", Font.ITALIC, 11));
+        wlTip.setForeground(MUTED);
+        wlTop.add(wlTitle);
+        wlTop.add(wlTip);
+
+        DefaultListModel<String> wlModel = new DefaultListModel<>();
+        for (SecurityScanner.SecurityReport rep : allReports) {
+            if (rep.metadata.getModId() != null) {
+                String status = PermissionManager.isWhitelisted(rep.metadata.getModId()) ? "[WHITELISTED] " : "";
+                wlModel.addElement(status + rep.metadata.getName() + " (" + rep.metadata.getModId() + ")");
+            }
+        }
+
+        JList<String> wlList = new JList<>(wlModel);
+        wlList.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
+        wlList.setBackground(BG);
+        wlList.setForeground(TEXT);
+        wlList.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+
+        AnimatedHoverButton wlBtn = new AnimatedHoverButton("🛡️ Whitelist Selected Mods", new Color(0, 140, 110), ACCENT);
+        wlBtn.addActionListener(e -> {
+            int[] sel = wlList.getSelectedIndices();
+            if (sel.length == 0) {
+                JOptionPane.showMessageDialog(frame, "Please select at least one mod.", "No Selection", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            int count = 0;
+            for (int i : sel) {
+                if (i >= 0 && i < allReports.size() && allReports.get(i).metadata.getModId() != null) {
+                    PermissionManager.addToWhitelist(allReports.get(i).metadata.getModId());
+                    count++;
+                }
+            }
+            JOptionPane.showMessageDialog(frame, count + " mod(s) whitelisted!\nThey will evaluate to 0/100 CLEAN on next launch.", "Whitelist Saved", JOptionPane.INFORMATION_MESSAGE);
+        });
+
+        wlSection.add(wlTop, BorderLayout.NORTH);
+        wlSection.add(new JScrollPane(wlList), BorderLayout.CENTER);
+        wlSection.add(wlBtn, BorderLayout.SOUTH);
+        configTab.add(wlSection, BorderLayout.CENTER);
+        tabs.addTab("Security Controls", configTab);
+
+        mainPanel.add(tabs, BorderLayout.CENTER);
+
+        // ── Bottom Toolbar ─────────────────────────────────────────────────
+        JPanel toolbar = new JPanel(new FlowLayout(FlowLayout.CENTER, 12, 10));
+        toolbar.setBackground(BG);
+
+        AnimatedHoverButton continueBtn = new AnimatedHoverButton("✅ Continue (Allow All)", GREEN, GREEN_H);
+        continueBtn.addActionListener(e -> { frame.dispose(); latch.countDown(); });
+
+        AnimatedHoverButton allowSelBtn = new AnimatedHoverButton("Allow Selected Mod", new Color(0, 140, 100), GREEN_H);
+        allowSelBtn.addActionListener(e -> {
+            int idx = modList.getSelectedIndex();
+            if (idx >= 0 && idx < allReports.size()) {
+                allReports.remove(idx);
+                listModel.remove(idx);
+                if (allReports.isEmpty()) { frame.dispose(); latch.countDown(); }
+                else modList.setSelectedIndex(Math.min(idx, allReports.size() - 1));
+                tabs.setTitleAt(0, "All Mods (" + allReports.size() + ")");
+            }
+        });
+
+        AnimatedHoverButton quarSelBtn = new AnimatedHoverButton("Quarantine Selected & Exit", ORANGE, ORANGE_H);
+        quarSelBtn.addActionListener(e -> {
+            int idx = modList.getSelectedIndex();
+            if (idx >= 0 && idx < allReports.size()) {
+                SecurityScanner.SecurityReport rep = allReports.get(idx);
+                if (rep.metadata.getJarFile() != null) QuarantineManager.moveJarToQuarantine(rep.metadata.getJarFile());
+                JOptionPane.showMessageDialog(frame, "Mod quarantined.\nMinecraft will shut down.", "Quarantine", JOptionPane.WARNING_MESSAGE);
+                System.exit(0);
+            }
+        });
+
+        AnimatedHoverButton quarAllBtn = new AnimatedHoverButton("Quarantine ALL Flagged & Exit", new Color(190, 50, 20), RED_H);
+        quarAllBtn.addActionListener(e -> {
+            for (SecurityScanner.SecurityReport rep : allReports) {
+                if (rep.suspicionLevel != SecurityScanner.SuspicionLevel.CLEAN && rep.metadata.getJarFile() != null)
+                    QuarantineManager.moveJarToQuarantine(rep.metadata.getJarFile());
+            }
+            JOptionPane.showMessageDialog(frame, "All flagged mods quarantined.\nMinecraft will shut down.", "Quarantine", JOptionPane.WARNING_MESSAGE);
+            System.exit(0);
+        });
+
+        AnimatedHoverButton killBtn = new AnimatedHoverButton("Terminate Minecraft", RED, RED_H);
+        killBtn.addActionListener(e -> System.exit(0));
+
+        toolbar.add(continueBtn);
+        toolbar.add(allowSelBtn);
+        toolbar.add(quarSelBtn);
+        toolbar.add(quarAllBtn);
+        toolbar.add(killBtn);
+
+        mainPanel.add(toolbar, BorderLayout.SOUTH);
+        frame.add(mainPanel);
+        frame.setVisible(true);
     }
 }

@@ -941,9 +941,6 @@ public class SecurityScanner {
 
         if (isTrustedMod && !hasActualMalwareSignature) {
             score = 0; // Trusted open-source / framework mod — zero malware threat
-        } else if (!hasActualMalwareSignature && score > 30) {
-            // Cap score for mods that only contain structural/optimization heuristics but zero malware signatures
-            score = 25;
         }
 
         SuspicionLevel level;

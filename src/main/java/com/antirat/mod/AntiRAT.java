@@ -35,34 +35,13 @@ public class AntiRAT implements PreLaunchEntrypoint, ModInitializer, ClientModIn
             SettingsStorage.init(new File(gameDir, "config"));
             MalwareRuleEngine.init(gameDir);
 
-            List<SecurityScanner.SecurityReport> flaggedReports = new ArrayList<>();
-
             File modsDir = new File(gameDir, "mods");
             if (modsDir.exists() && modsDir.isDirectory()) {
                 File[] files = modsDir.listFiles((dir, name) -> name.endsWith(".jar"));
-                if (files != null) {
-                    for (File jar : files) {
-                        String name = jar.getName().toLowerCase();
-                        if (name.contains("anti-rat") || name.contains("antirat")) {
-                            continue;
-                        }
-                        SecurityScanner.SecurityReport report = SecurityScanner.scanJar(jar);
-                        System.out.println(String.format("[AntiRAT Scan] Jar: %s | Suspicion: %s (Score: %d) | Obf Score: %d",
-                            jar.getName(), report.suspicionLevel.label, report.suspicionScore, report.obfuscationResult.score));
-
-                        if (report.suspicionLevel != SecurityScanner.SuspicionLevel.CLEAN || report.suspicionScore > 25) {
-                            QuarantineManager.addQuarantinedReport(report);
-                            flaggedReports.add(report);
-                        }
-                    }
+                if (files != null && files.length > 0) {
+                    // Show scanning progress UI with deep scan, then display ALL mods (clean + suspicious)
+                    NativeSecurityWindow.showScanningAndGate(files, gameDir);
                 }
-            }
-
-            System.out.println("[AntiRAT] Pre-Launch Scan completed. Quarantined mods count: " + flaggedReports.size());
-
-            // Synchronously launch Native Security Gate Window and PAUSE game boot thread if suspicious mods exist!
-            if (!flaggedReports.isEmpty()) {
-                NativeSecurityWindow.showPreLaunchWindow(flaggedReports);
             }
 
         } catch (Throwable t) {
