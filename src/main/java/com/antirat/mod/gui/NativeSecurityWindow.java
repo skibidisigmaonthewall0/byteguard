@@ -265,72 +265,141 @@ public class NativeSecurityWindow {
             reportsTab.add(splitPane, BorderLayout.CENTER);
             tabbedPane.addTab("Scanned Mods (" + activeReports.size() + ")", reportsTab);
 
-            // 2. Settings & Control Tab
-            JPanel configTab = new JPanel(new GridLayout(3, 1, 12, 12));
+            // 2. Settings & Security Controls Tab with Whitelist Manager
+            JPanel configTab = new JPanel(new BorderLayout(14, 14));
             configTab.setBackground(COLOR_PANEL);
-            configTab.setBorder(new EmptyBorder(24, 24, 24, 24));
+            configTab.setBorder(new EmptyBorder(16, 16, 16, 16));
+
+            JPanel topOptions = new JPanel(new GridLayout(2, 1, 8, 8));
+            topOptions.setOpaque(false);
 
             JCheckBox safeModeBox = new JCheckBox("Safe Mode (Auto-Deny All Suspicious File & Process Actions)", PermissionManager.isSafeMode());
-            safeModeBox.setFont(new Font("Segoe UI", Font.BOLD, 14));
+            safeModeBox.setFont(new Font("Segoe UI", Font.BOLD, 13));
             safeModeBox.setBackground(COLOR_PANEL);
             safeModeBox.setForeground(COLOR_TEXT);
             safeModeBox.addActionListener(e -> PermissionManager.setSafeMode(safeModeBox.isSelected()));
 
             JCheckBox killSwitchBox = new JCheckBox("Emergency Kill Switch (Block All System Access Instantly)", PermissionManager.isKillSwitchActive());
-            killSwitchBox.setFont(new Font("Segoe UI", Font.BOLD, 14));
+            killSwitchBox.setFont(new Font("Segoe UI", Font.BOLD, 13));
             killSwitchBox.setBackground(COLOR_PANEL);
             killSwitchBox.setForeground(COLOR_RED);
             killSwitchBox.addActionListener(e -> PermissionManager.setKillSwitch(killSwitchBox.isSelected()));
 
-            configTab.add(safeModeBox);
-            configTab.add(killSwitchBox);
+            topOptions.add(safeModeBox);
+            topOptions.add(killSwitchBox);
+            configTab.add(topOptions, BorderLayout.NORTH);
+
+            // Mod Whitelist Manager Section below Emergency Kill Switch
+            JPanel whitelistSection = new JPanel(new BorderLayout(8, 8));
+            whitelistSection.setBackground(COLOR_CARD);
+            whitelistSection.setBorder(BorderFactory.createCompoundBorder(
+                new LineBorder(COLOR_BG, 1, true),
+                new EmptyBorder(12, 12, 12, 12)
+            ));
+
+            JLabel wlHeader = new JLabel("🛡️ Mod Whitelist Manager (Select mods to whitelist so they evaluate to 0/100 CLEAN):");
+            wlHeader.setFont(new Font("Segoe UI", Font.BOLD, 13));
+            wlHeader.setForeground(COLOR_ACCENT);
+
+            DefaultListModel<String> wlListModel = new DefaultListModel<>();
+            for (SecurityScanner.SecurityReport rep : activeReports) {
+                if (rep.metadata.getModId() != null) {
+                    String status = PermissionManager.isWhitelisted(rep.metadata.getModId()) ? "[WHITELISTED] " : "";
+                    wlListModel.addElement(status + rep.metadata.getName() + " (" + rep.metadata.getModId() + ")");
+                }
+            }
+
+            JList<String> wlJList = new JList<>(wlListModel);
+            wlJList.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
+            wlJList.setBackground(COLOR_BG);
+            wlJList.setForeground(COLOR_TEXT);
+            wlJList.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+
+            AnimatedHoverButton batchWhitelistBtn = new AnimatedHoverButton("🛡️ Whitelist Selected Mods", new Color(0, 150, 120), COLOR_ACCENT);
+            batchWhitelistBtn.addActionListener(e -> {
+                int[] selectedIndices = wlJList.getSelectedIndices();
+                if (selectedIndices.length == 0) {
+                    JOptionPane.showMessageDialog(frame, "Please select at least one mod from the list to whitelist.", "No Selection", JOptionPane.WARNING_MESSAGE);
+                    return;
+                }
+                int addedCount = 0;
+                for (int i : selectedIndices) {
+                    if (i >= 0 && i < activeReports.size()) {
+                        SecurityScanner.SecurityReport rep = activeReports.get(i);
+                        if (rep.metadata.getModId() != null) {
+                            PermissionManager.addToWhitelist(rep.metadata.getModId());
+                            addedCount++;
+                        }
+                    }
+                }
+                JOptionPane.showMessageDialog(frame, addedCount + " mod(s) have been added to your Whitelist!\nThey will evaluate to 0/100 CLEAN on launch.", "Whitelist Saved", JOptionPane.INFORMATION_MESSAGE);
+            });
+
+            whitelistSection.add(wlHeader, BorderLayout.NORTH);
+            whitelistSection.add(new JScrollPane(wlJList), BorderLayout.CENTER);
+            whitelistSection.add(batchWhitelistBtn, BorderLayout.SOUTH);
+
+            configTab.add(whitelistSection, BorderLayout.CENTER);
             tabbedPane.addTab("Security Controls", configTab);
 
             mainPanel.add(tabbedPane, BorderLayout.CENTER);
 
-            // Bottom Action Buttons Panel with Smooth Animations
-            JPanel actionPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 8, 8));
+            // Bottom Action Buttons Panel (Original Layout Restored)
+            JPanel actionPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 12, 10));
             actionPanel.setBackground(COLOR_BG);
 
-            AnimatedHoverButton openWebBtn = new AnimatedHoverButton("🌐 Open Report in Web Browser", new Color(0, 170, 200), new Color(0, 210, 240));
-            openWebBtn.addActionListener(e -> {
-                com.antirat.mod.server.LocalReportServer.startAndOpenReport(activeReports);
-            });
+            AnimatedHoverButton scanAgainBtn = new AnimatedHoverButton("Scan Again", new Color(50, 80, 160), new Color(70, 110, 210));
+            scanAgainBtn.addActionListener(e -> {
+                scanAgainBtn.setText("Scanning...");
+                scanAgainBtn.setEnabled(false);
+                new Thread(() -> {
+                    try {
+                        File modsDir = null;
+                        if (!activeReports.isEmpty() && activeReports.get(0).metadata.getJarFile() != null) {
+                            modsDir = activeReports.get(0).metadata.getJarFile().getParentFile();
+                        }
+                        if (modsDir == null || !modsDir.exists()) return;
 
-            AnimatedHoverButton viewTextBtn = new AnimatedHoverButton("📄 View Text Report", new Color(70, 80, 110), new Color(100, 115, 150));
-            viewTextBtn.addActionListener(e -> {
-                int idx = reportJList.getSelectedIndex();
-                if (idx >= 0 && idx < activeReports.size()) {
-                    SecurityScanner.SecurityReport rep = activeReports.get(idx);
-                    JTextArea ta = new JTextArea(detailsArea.getText());
-                    ta.setEditable(false);
-                    ta.setFont(new Font("Consolas", Font.PLAIN, 12));
-                    JScrollPane sp = new JScrollPane(ta);
-                    sp.setPreferredSize(new Dimension(750, 480));
-                    JOptionPane.showMessageDialog(frame, sp, "Text Report - " + rep.metadata.getName(), JOptionPane.PLAIN_MESSAGE);
-                }
-            });
+                        List<SecurityScanner.SecurityReport> freshReports = new ArrayList<>();
+                        File[] files = modsDir.listFiles((d, n) -> n.endsWith(".jar"));
+                        if (files != null) {
+                            for (File jar : files) {
+                                String n = jar.getName().toLowerCase();
+                                if (n.contains("byteguard") || n.contains("antirat")) continue;
+                                SecurityScanner.SecurityReport report = SecurityScanner.scanJar(jar);
+                                if (report.suspicionLevel == SecurityScanner.SuspicionLevel.HIGH ||
+                                    report.suspicionLevel == SecurityScanner.SuspicionLevel.CRITICAL) {
+                                    freshReports.add(report);
+                                }
+                            }
+                        }
 
-            AnimatedHoverButton whitelistBtn = new AnimatedHoverButton("🛡️ Whitelist Selected Mod", new Color(0, 150, 120), COLOR_ACCENT);
-            whitelistBtn.addActionListener(e -> {
-                int idx = reportJList.getSelectedIndex();
-                if (idx >= 0 && idx < activeReports.size()) {
-                    SecurityScanner.SecurityReport rep = activeReports.get(idx);
-                    PermissionManager.addToWhitelist(rep.metadata.getModId());
-                    JOptionPane.showMessageDialog(frame, "Mod '" + rep.metadata.getName() + "' is now whitelisted and will evaluate to 0/100 CLEAN.", "Mod Whitelisted", JOptionPane.INFORMATION_MESSAGE);
-                    activeReports.remove(idx);
-                    listModel.remove(idx);
-                    if (activeReports.isEmpty()) {
-                        frame.dispose();
-                        latch.countDown();
-                    } else {
-                        reportJList.setSelectedIndex(Math.min(idx, activeReports.size() - 1));
-                        tabbedPane.setTitleAt(0, "Scanned Mods (" + activeReports.size() + ")");
+                        SwingUtilities.invokeLater(() -> {
+                            activeReports.clear();
+                            activeReports.addAll(freshReports);
+                            listModel.clear();
+                            for (SecurityScanner.SecurityReport fr : activeReports) {
+                                int score = Math.min(100, fr.suspicionScore);
+                                listModel.addElement(String.format("[!] %s (%s) — Score: %d/100", fr.metadata.getName(),
+                                    fr.metadata.getJarFile() != null ? fr.metadata.getJarFile().getName() : "jar", score));
+                            }
+                            tabbedPane.setTitleAt(0, "Scanned Mods (" + activeReports.size() + ")");
+                            scanAgainBtn.setText("Scan Again");
+                            scanAgainBtn.setEnabled(true);
+                            if (!activeReports.isEmpty()) {
+                                reportJList.setSelectedIndex(0);
+                            }
+                        });
+                    } catch (Exception ex) {
+                        SwingUtilities.invokeLater(() -> {
+                            scanAgainBtn.setText("Scan Again");
+                            scanAgainBtn.setEnabled(true);
+                        });
                     }
-                }
+                }, "ByteGuard-Rescan").start();
             });
 
-            AnimatedHoverButton allowSelectedBtn = new AnimatedHoverButton("Allow Once", COLOR_GREEN, COLOR_GREEN_HOVER);
+            AnimatedHoverButton allowSelectedBtn = new AnimatedHoverButton("Allow Selected Mod", COLOR_GREEN, COLOR_GREEN_HOVER);
             allowSelectedBtn.addActionListener(e -> {
                 int idx = reportJList.getSelectedIndex();
                 if (idx >= 0 && idx < activeReports.size()) {
@@ -346,7 +415,7 @@ public class NativeSecurityWindow {
                 }
             });
 
-            AnimatedHoverButton quarantineSelectedBtn = new AnimatedHoverButton("Quarantine & Exit", COLOR_ORANGE, COLOR_ORANGE_HOVER);
+            AnimatedHoverButton quarantineSelectedBtn = new AnimatedHoverButton("Quarantine Selected & Exit", COLOR_ORANGE, COLOR_ORANGE_HOVER);
             quarantineSelectedBtn.addActionListener(e -> {
                 int idx = reportJList.getSelectedIndex();
                 if (idx >= 0 && idx < activeReports.size()) {
@@ -359,85 +428,27 @@ public class NativeSecurityWindow {
                 }
             });
 
+            AnimatedHoverButton quarantineAllBtn = new AnimatedHoverButton("Quarantine ALL Mods & Exit", new Color(190, 50, 20), COLOR_RED_HOVER);
+            quarantineAllBtn.addActionListener(e -> {
+                for (SecurityScanner.SecurityReport rep : activeReports) {
+                    if (rep.metadata.getJarFile() != null) {
+                        QuarantineManager.moveJarToQuarantine(rep.metadata.getJarFile());
+                    }
+                }
+                JOptionPane.showMessageDialog(frame, "All flagged mods moved to .minecraft/quarantine.\nMinecraft will now shut down to protect your system.", "Quarantine Complete", JOptionPane.WARNING_MESSAGE);
+                System.exit(0);
+            });
+
             AnimatedHoverButton exitBtn = new AnimatedHoverButton("Terminate Minecraft", COLOR_RED, COLOR_RED_HOVER);
             exitBtn.addActionListener(e -> {
                 System.out.println("[ByteGuard] User terminated Minecraft execution from Security Gate.");
                 System.exit(0);
             });
 
-            AnimatedHoverButton scanAgainBtn = new AnimatedHoverButton("Scan Again", new Color(50, 80, 160), new Color(70, 110, 210));
-            scanAgainBtn.addActionListener(e -> {
-                scanAgainBtn.setText("Scanning...");
-                scanAgainBtn.setEnabled(false);
-                new Thread(() -> {
-                    try {
-                        // Locate .minecraft/mods directory from an existing report's JAR path
-                        File modsDir = null;
-                        if (!activeReports.isEmpty() && activeReports.get(0).metadata.getJarFile() != null) {
-                            modsDir = activeReports.get(0).metadata.getJarFile().getParentFile();
-                        }
-                        if (modsDir == null || !modsDir.exists()) return;
-
-                        // Re-scan all JARs
-                        List<SecurityScanner.SecurityReport> freshReports = new ArrayList<>();
-                        File[] files = modsDir.listFiles((d, n) -> n.endsWith(".jar"));
-                        if (files != null) {
-                            for (File jar : files) {
-                                String n = jar.getName().toLowerCase();
-                                if (n.contains("anti-rat") || n.contains("antirat")) continue;
-                                SecurityScanner.SecurityReport rep = SecurityScanner.scanJar(jar);
-                                if (rep.suspicionLevel == SecurityScanner.SuspicionLevel.HIGH ||
-                                    rep.suspicionLevel == SecurityScanner.SuspicionLevel.CRITICAL ||
-                                    rep.obfuscationResult.score >= 35) {
-                                    freshReports.add(rep);
-                                }
-                            }
-                        }
-
-                        // Merge new reports not already in the list
-                        for (SecurityScanner.SecurityReport fr : freshReports) {
-                            boolean alreadyPresent = false;
-                            for (SecurityScanner.SecurityReport existing : activeReports) {
-                                if (fr.metadata.getJarFile() != null &&
-                                    fr.metadata.getJarFile().equals(existing.metadata.getJarFile())) {
-                                    alreadyPresent = true;
-                                    break;
-                                }
-                            }
-                            if (!alreadyPresent) {
-                                activeReports.add(fr);
-                                int score = Math.min(100, fr.suspicionScore);
-                                String entry = String.format("[!] %s (%s) — Score: %d/100", fr.metadata.getName(),
-                                    fr.metadata.getJarFile() != null ? fr.metadata.getJarFile().getName() : "jar", score);
-                                SwingUtilities.invokeLater(() -> listModel.addElement(entry));
-                            }
-                        }
-
-                        SwingUtilities.invokeLater(() -> {
-                            tabbedPane.setTitleAt(0, "Scanned Mods (" + activeReports.size() + ")");
-                            scanAgainBtn.setText("Scan Again");
-                            scanAgainBtn.setEnabled(true);
-                            if (activeReports.isEmpty()) {
-                                detailsArea.setText("Rescan complete — no threats detected!");
-                            } else {
-                                detailsArea.setText("Rescan complete. " + activeReports.size() + " flagged mod(s) found.");
-                            }
-                        });
-                    } catch (Exception ex) {
-                        SwingUtilities.invokeLater(() -> {
-                            scanAgainBtn.setText("Scan Again");
-                            scanAgainBtn.setEnabled(true);
-                        });
-                    }
-                }, "AntiRAT-Rescan").start();
-            });
-
-            actionPanel.add(openWebBtn);
-            actionPanel.add(viewTextBtn);
-            actionPanel.add(whitelistBtn);
             actionPanel.add(scanAgainBtn);
             actionPanel.add(allowSelectedBtn);
             actionPanel.add(quarantineSelectedBtn);
+            actionPanel.add(quarantineAllBtn);
             actionPanel.add(exitBtn);
 
             mainPanel.add(actionPanel, BorderLayout.SOUTH);
@@ -447,4 +458,3 @@ public class NativeSecurityWindow {
         });
     }
 }
-
