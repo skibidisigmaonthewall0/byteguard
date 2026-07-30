@@ -50,9 +50,7 @@ public class AntiRAT implements PreLaunchEntrypoint, ModInitializer, ClientModIn
                         System.out.println(String.format("[AntiRAT Scan] Jar: %s | Suspicion: %s (Score: %d) | Obf Score: %d",
                             jar.getName(), report.suspicionLevel.label, report.suspicionScore, report.obfuscationResult.score));
 
-                        if (report.suspicionLevel == SecurityScanner.SuspicionLevel.HIGH ||
-                            report.suspicionLevel == SecurityScanner.SuspicionLevel.CRITICAL ||
-                            report.obfuscationResult.score >= 35) {
+                        if (report.suspicionLevel != SecurityScanner.SuspicionLevel.CLEAN || report.suspicionScore > 25) {
                             QuarantineManager.addQuarantinedReport(report);
                             flaggedReports.add(report);
                         }

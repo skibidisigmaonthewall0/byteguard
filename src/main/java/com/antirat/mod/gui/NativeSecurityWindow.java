@@ -36,7 +36,7 @@ public class NativeSecurityWindow {
     private static final Color COLOR_GREEN_HOVER = new Color(30, 220, 140);
 
     /**
-     * Modern Animated Hover Button with smooth cursor feedback and rounded borders.
+     * Modern Animated Hover Button with smooth cursor feedback and custom rounded background painting.
      */
     public static class AnimatedHoverButton extends JButton {
         private final Color normalBg;
@@ -51,10 +51,9 @@ public class NativeSecurityWindow {
             setForeground(Color.WHITE);
             setBackground(normalBg);
             setFocusPainted(false);
-            setBorder(BorderFactory.createCompoundBorder(
-                new LineBorder(normalBg.darker(), 1, true),
-                new EmptyBorder(7, 14, 7, 14)
-            ));
+            setContentAreaFilled(false);
+            setOpaque(false);
+            setBorder(new EmptyBorder(8, 16, 8, 16));
             setCursor(new Cursor(Cursor.HAND_CURSOR));
 
             addMouseListener(new MouseAdapter() {
@@ -62,6 +61,7 @@ public class NativeSecurityWindow {
                 public void mouseEntered(MouseEvent e) {
                     if (isEnabled()) {
                         setBackground(hoverBg);
+                        repaint();
                     }
                 }
 
@@ -69,9 +69,23 @@ public class NativeSecurityWindow {
                 public void mouseExited(MouseEvent e) {
                     if (isEnabled()) {
                         setBackground(normalBg);
+                        repaint();
                     }
                 }
             });
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setColor(getBackground());
+            g2.fillRoundRect(0, 0, getWidth(), getHeight(), 8, 8);
+            g2.setColor(getBackground().brighter());
+            g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 8, 8);
+            g2.dispose();
+
+            super.paintComponent(g);
         }
     }
 
