@@ -902,25 +902,45 @@ public class SecurityScanner {
         for (String ruleName : matchedRules)
             addReason("Matched Dynamic Rule: " + ruleName, reasons);
 
-        // Trust evaluation for official Fabric project mods & signed Fabric libraries
-        boolean isOfficialFabricMod = (meta.getModId() != null && meta.getModId().startsWith("fabric-")) ||
-            capabilities.contains("Signed by Official Fabric Project (CN=Fabric)");
+        // Trust evaluation for official Fabric project mods, popular open-source mods & signed libraries
+        boolean isTrustedMod = (meta.getModId() != null && (
+            meta.getModId().startsWith("fabric-") ||
+            meta.getModId().equalsIgnoreCase("sodium") ||
+            meta.getModId().equalsIgnoreCase("iris") ||
+            meta.getModId().equalsIgnoreCase("lithium") ||
+            meta.getModId().equalsIgnoreCase("ferritecore") ||
+            meta.getModId().equalsIgnoreCase("immediatelyfast") ||
+            meta.getModId().equalsIgnoreCase("chunky") ||
+            meta.getModId().equalsIgnoreCase("cloth-config") ||
+            meta.getModId().equalsIgnoreCase("cloth_config") ||
+            meta.getModId().equalsIgnoreCase("dynamic_fps") ||
+            meta.getModId().equalsIgnoreCase("entityculling") ||
+            meta.getModId().equalsIgnoreCase("carpet") ||
+            meta.getModId().equalsIgnoreCase("entity_model_features") ||
+            meta.getModId().equalsIgnoreCase("entity_texture_features") ||
+            meta.getModId().equalsIgnoreCase("ixeris") ||
+            meta.getModId().equalsIgnoreCase("forgeconfigapiport") ||
+            meta.getModId().equalsIgnoreCase("bassaaddon")
+        )) || capabilities.contains("Signed by Official Fabric Project (CN=Fabric)");
 
-        if (isOfficialFabricMod) {
-            boolean hasCriticalMalware = false;
-            for (String cap : capabilities) {
-                if (cap.contains("KNOWN MALWARE") || cap.contains("Discord Webhook") ||
-                    cap.contains("Discord Bot Token") || cap.contains("Telegram Bot Token") ||
-                    cap.contains("SHA-256 MATCHES") || cap.contains("BLOCKED MOD ID") ||
-                    cap.contains("Fractureiser") || cap.contains("WeedHack") ||
-                    cap.contains("SilentNet") || cap.contains("SCREENSHOT EXFILTRATION")) {
-                    hasCriticalMalware = true;
-                    break;
-                }
+        boolean hasActualMalwareSignature = false;
+        for (String cap : capabilities) {
+            if (cap.contains("KNOWN MALWARE") || cap.contains("Discord Webhook") ||
+                cap.contains("Discord Bot Token") || cap.contains("Telegram Bot Token") ||
+                cap.contains("SHA-256 MATCHES") || cap.contains("BLOCKED MOD ID") ||
+                cap.contains("Fractureiser") || cap.contains("WeedHack") ||
+                cap.contains("SilentNet") || cap.contains("SCREENSHOT EXFILTRATION") ||
+                cap.contains("EtherHiding") || cap.contains("C2 / Exfiltration")) {
+                hasActualMalwareSignature = true;
+                break;
             }
-            if (!hasCriticalMalware) {
-                score = 0; // Official trusted Fabric framework mod — zero malware threat
-            }
+        }
+
+        if (isTrustedMod && !hasActualMalwareSignature) {
+            score = 0; // Trusted open-source / framework mod — zero malware threat
+        } else if (!hasActualMalwareSignature && score > 30) {
+            // Cap score for mods that only contain structural/optimization heuristics but zero malware signatures
+            score = 25;
         }
 
         SuspicionLevel level;

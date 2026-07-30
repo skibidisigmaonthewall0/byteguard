@@ -18,8 +18,7 @@ import java.util.concurrent.CountDownLatch;
 
 /**
  * Premium Modern Dark-Theme Security Suite Window.
- * Features boot animation, smooth button hover animations, exact flagged strings inspector,
- * emoji rendering via Segoe UI Emoji font, and credits to MarkDev1337.
+ * Features Pre-Launch Gate, Multi-Select Mod Whitelist manager, and original button toolbar layout.
  */
 public class NativeSecurityWindow {
 
@@ -28,25 +27,6 @@ public class NativeSecurityWindow {
     private static final Color COLOR_CARD = new Color(34, 38, 50);
     private static final Color COLOR_TEXT = new Color(240, 243, 246);
     private static final Color COLOR_TEXT_MUTED = new Color(140, 148, 165);
-
-    // Emoji-capable font for proper Windows emoji rendering
-    private static final Font EMOJI_FONT = resolveEmojiFont(18f);
-
-    private static Font resolveEmojiFont(float size) {
-        String[] candidates = {"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "Segoe UI Symbol", "Dialog"};
-        for (String name : candidates) {
-            Font f = new Font(name, Font.PLAIN, (int) size);
-            if (f.canDisplayUpTo("\uD83D\uDEE1") == -1) return f.deriveFont(size);
-        }
-        return new Font("Dialog", Font.PLAIN, (int) size);
-    }
-
-    /** Returns a JLabel that renders emoji correctly on Windows via Segoe UI Emoji font */
-    private static JLabel emojiLabel(String text, float size, int style) {
-        JLabel label = new JLabel(text);
-        label.setFont(resolveEmojiFont(size).deriveFont(style));
-        return label;
-    }
     private static final Color COLOR_ACCENT = new Color(0, 230, 180);
     private static final Color COLOR_RED = new Color(245, 65, 85);
     private static final Color COLOR_RED_HOVER = new Color(255, 95, 115);
@@ -58,58 +38,59 @@ public class NativeSecurityWindow {
     /**
      * Modern Animated Hover Button with smooth cursor feedback and rounded borders.
      */
-    private static class AnimatedHoverButton extends JButton {
-        private Color normalColor;
-        private Color hoverColor;
+    public static class AnimatedHoverButton extends JButton {
+        private final Color normalBg;
+        private final Color hoverBg;
 
-        public AnimatedHoverButton(String text, Color normalColor, Color hoverColor) {
+        public AnimatedHoverButton(String text, Color normalBg, Color hoverBg) {
             super(text);
-            this.normalColor = normalColor;
-            this.hoverColor = hoverColor;
+            this.normalBg = normalBg;
+            this.hoverBg = hoverBg;
+
             setFont(new Font("Segoe UI", Font.BOLD, 12));
             setForeground(Color.WHITE);
-            setBackground(normalColor);
+            setBackground(normalBg);
             setFocusPainted(false);
-            setContentAreaFilled(false);
-            setOpaque(true);
-            setCursor(new Cursor(Cursor.HAND_CURSOR));
             setBorder(BorderFactory.createCompoundBorder(
-                new LineBorder(normalColor.brighter(), 1, true),
-                new EmptyBorder(8, 16, 8, 16)
+                new LineBorder(normalBg.darker(), 1, true),
+                new EmptyBorder(7, 14, 7, 14)
             ));
+            setCursor(new Cursor(Cursor.HAND_CURSOR));
 
             addMouseListener(new MouseAdapter() {
                 @Override
                 public void mouseEntered(MouseEvent e) {
-                    setBackground(hoverColor);
+                    if (isEnabled()) {
+                        setBackground(hoverBg);
+                    }
                 }
 
                 @Override
                 public void mouseExited(MouseEvent e) {
-                    setBackground(normalColor);
+                    if (isEnabled()) {
+                        setBackground(normalBg);
+                    }
                 }
             });
         }
     }
 
-    public static void showPreLaunchWindow(List<SecurityScanner.SecurityReport> reportsInput) {
-        if (reportsInput == null || reportsInput.isEmpty()) return;
+    public static void showPreLaunchWindow(List<SecurityScanner.SecurityReport> activeReports) {
+        displayGateWindow(activeReports);
+    }
 
-        List<SecurityScanner.SecurityReport> activeReports = new ArrayList<>(reportsInput);
+    public static void displayGateWindow(List<SecurityScanner.SecurityReport> activeReports) {
+        if (activeReports == null || activeReports.isEmpty()) {
+            return;
+        }
+
         CountDownLatch latch = new CountDownLatch(1);
-
-        SwingUtilities.invokeLater(() -> {
-            // Play boot animation first, then open security gate
-            BootAnimationScreen bootAnim = new BootAnimationScreen(() -> {
-                SwingUtilities.invokeLater(() -> openSecurityGate(activeReports, latch));
-            });
-            bootAnim.startAnimation();
-        });
+        openSecurityGate(activeReports, latch);
 
         try {
-            System.out.println("[AntiRAT] Pausing game startup thread until user resolves Pre-Launch Security Gate window...");
+            System.out.println("[ByteGuard] Pausing game startup thread until user resolves Pre-Launch Security Gate window...");
             latch.await();
-            System.out.println("[AntiRAT] User decision received. Resuming startup sequence...");
+            System.out.println("[ByteGuard] User decision received. Resuming startup sequence...");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
@@ -119,17 +100,16 @@ public class NativeSecurityWindow {
         SwingUtilities.invokeLater(() -> {
             try {
                 UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-            } catch (Exception ignored) {
-            }
+            } catch (Exception ignored) {}
 
             JDialog frame = new JDialog((Frame) null, "ByteGuard Pre-Launch Security Suite", true);
             frame.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
-            frame.setSize(920, 620);
+            frame.setSize(940, 640);
             frame.setLocationRelativeTo(null);
 
-            JPanel mainPanel = new JPanel(new BorderLayout(14, 14));
+            JPanel mainPanel = new JPanel(new BorderLayout(12, 12));
             mainPanel.setBackground(COLOR_BG);
-            mainPanel.setBorder(new EmptyBorder(18, 18, 18, 18));
+            mainPanel.setBorder(new EmptyBorder(16, 16, 16, 16));
 
             // Header Banner
             JPanel headerPanel = new JPanel(new BorderLayout(8, 8));
@@ -139,13 +119,12 @@ public class NativeSecurityWindow {
                 new EmptyBorder(12, 16, 12, 16)
             ));
 
-            // Use HTML to allow mixed emoji + bold fonts in same label
             JLabel titleLabel = new JLabel(
                 "<html><span style='font-family:Segoe UI Emoji;font-size:16pt;'>🛡</span>"
                 + "<span style='font-family:Segoe UI;font-weight:bold;font-size:14pt;'> BYTEGUARD SECURITY SUITE &mdash; PRE-LAUNCH GATE</span></html>",
                 SwingConstants.LEFT
             );
-            titleLabel.setForeground(new Color(0, 230, 180));
+            titleLabel.setForeground(COLOR_ACCENT);
 
             JLabel subtitleLabel = new JLabel("Minecraft loading is paused. Developed by MarkDev1337 | ByteGuard Security Engine", SwingConstants.LEFT);
             subtitleLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
@@ -159,17 +138,17 @@ public class NativeSecurityWindow {
             JTabbedPane tabbedPane = new JTabbedPane();
             tabbedPane.setFont(new Font("Segoe UI", Font.BOLD, 12));
             tabbedPane.setBackground(COLOR_PANEL);
-            tabbedPane.setForeground(Color.BLACK);
 
-            // 1. Reports Tab
-            JPanel reportsTab = new JPanel(new BorderLayout(12, 12));
+            // ── 1. Reports Tab ──────────────────────────────────────────────────
+            JPanel reportsTab = new JPanel(new BorderLayout(10, 10));
             reportsTab.setBackground(COLOR_PANEL);
-            reportsTab.setBorder(new EmptyBorder(12, 12, 12, 12));
+            reportsTab.setBorder(new EmptyBorder(10, 10, 10, 10));
 
             DefaultListModel<String> listModel = new DefaultListModel<>();
             for (SecurityScanner.SecurityReport rep : activeReports) {
                 int displayScore = Math.min(100, rep.suspicionScore);
-                listModel.addElement(String.format("[!] %s (%s) — Score: %d/100", rep.metadata.getName(), rep.metadata.getJarFile() != null ? rep.metadata.getJarFile().getName() : "jar", displayScore));
+                listModel.addElement(String.format("[!] %s (%s) — Score: %d/100", rep.metadata.getName(),
+                    rep.metadata.getJarFile() != null ? rep.metadata.getJarFile().getName() : "jar", displayScore));
             }
 
             JList<String> reportJList = new JList<>(listModel);
@@ -193,6 +172,7 @@ public class NativeSecurityWindow {
                 if (idx >= 0 && idx < activeReports.size()) {
                     SecurityScanner.SecurityReport r = activeReports.get(idx);
                     int displayScore = Math.min(100, r.suspicionScore);
+
                     StringBuilder sb = new StringBuilder();
                     sb.append("====================================================\n");
                     sb.append("  MOD SECURITY ANALYSIS REPORT\n");
@@ -203,42 +183,21 @@ public class NativeSecurityWindow {
                     sb.append("Suspicion Level  : ").append(r.suspicionLevel.label).append(" (Score: ").append(displayScore).append("/100)\n");
                     sb.append("Obfuscation Score: ").append(r.obfuscationResult.score).append("/100\n");
 
-                    // Compute and display SHA-256 hash
                     if (r.metadata.getJarFile() != null) {
                         try {
                             String sha256 = com.antirat.mod.scanner.ThreatDatabase.sha256Hex(r.metadata.getJarFile());
                             sb.append("SHA-256          : ").append(sha256).append("\n");
-                            // Check if it matches known-bad database
-                            if (com.antirat.mod.scanner.ThreatDatabase.getKnownBadHashes().containsKey(sha256)) {
-                                sb.append("HASH STATUS      : !! KNOWN MALICIOUS JAR - ").append(
-                                    com.antirat.mod.scanner.ThreatDatabase.getKnownBadHashes().get(sha256)).append("\n");
-                            } else {
-                                sb.append("HASH STATUS      : Not in known-bad database\n");
-                            }
-                        } catch (Exception e) {
-                            sb.append("SHA-256          : (error computing hash)\n");
-                        }
+                        } catch (Exception ignored) {}
                     }
-                    sb.append("\n");
-
-                    sb.append("DETECTED CAPABILITIES:\n");
-                    if (r.detectedCapabilities.isEmpty()) {
-                        sb.append("  - None detected\n");
-                    } else {
-                        for (String cap : r.detectedCapabilities) {
-                            // Prefix critical findings with a visual alert
-                            String prefix = cap.startsWith("!!") ? "  [CRITICAL] " : "  [!] ";
-                            sb.append(prefix).append(cap).append("\n");
-                        }
+                    sb.append("\nDETECTED CAPABILITIES:\n");
+                    for (String cap : r.detectedCapabilities) {
+                        String prefix = cap.startsWith("!!") ? "  [CRITICAL] " : "  [!] ";
+                        sb.append(prefix).append(cap).append("\n");
                     }
 
                     sb.append("\nEXTRACTED / DEOBFUSCATED STRINGS:\n");
-                    if (r.flaggedStrings == null || r.flaggedStrings.isEmpty()) {
-                        sb.append("  - None extracted\n");
-                    } else {
-                        for (String str : r.flaggedStrings) {
-                            sb.append("  >> \"").append(str).append("\"\n");
-                        }
+                    for (String str : r.flaggedStrings) {
+                        sb.append("  >> \"").append(str).append("\"\n");
                     }
 
                     sb.append("\nFLAGGED REASONS:\n");
@@ -247,7 +206,7 @@ public class NativeSecurityWindow {
                     }
 
                     detailsArea.setText(sb.toString());
-                    detailsArea.setCaretPosition(0); // Scroll to top
+                    detailsArea.setCaretPosition(0);
                 } else {
                     detailsArea.setText("No mod selected.");
                 }
@@ -265,7 +224,7 @@ public class NativeSecurityWindow {
             reportsTab.add(splitPane, BorderLayout.CENTER);
             tabbedPane.addTab("Scanned Mods (" + activeReports.size() + ")", reportsTab);
 
-            // 2. Settings & Security Controls Tab with Whitelist Manager
+            // ── 2. Security Controls & Mod Whitelist Manager Tab ────────────────
             JPanel configTab = new JPanel(new BorderLayout(14, 14));
             configTab.setBackground(COLOR_PANEL);
             configTab.setBorder(new EmptyBorder(16, 16, 16, 16));
@@ -289,7 +248,7 @@ public class NativeSecurityWindow {
             topOptions.add(killSwitchBox);
             configTab.add(topOptions, BorderLayout.NORTH);
 
-            // Mod Whitelist Manager Section below Emergency Kill Switch
+            // Batch Mod Whitelist Section (Supports selecting 2 or more mods at once)
             JPanel whitelistSection = new JPanel(new BorderLayout(8, 8));
             whitelistSection.setBackground(COLOR_CARD);
             whitelistSection.setBorder(BorderFactory.createCompoundBorder(
@@ -297,9 +256,18 @@ public class NativeSecurityWindow {
                 new EmptyBorder(12, 12, 12, 12)
             ));
 
-            JLabel wlHeader = new JLabel("🛡️ Mod Whitelist Manager (Select mods to whitelist so they evaluate to 0/100 CLEAN):");
+            JLabel wlHeader = new JLabel("🛡️ Mod Whitelist Manager (Select 2 or more mods to whitelist):");
             wlHeader.setFont(new Font("Segoe UI", Font.BOLD, 13));
             wlHeader.setForeground(COLOR_ACCENT);
+
+            JLabel wlTip = new JLabel("💡 Multi-Select Enabled: Hold Ctrl or Shift (or drag) to select 2 or more mods at once.");
+            wlTip.setFont(new Font("Segoe UI", Font.ITALIC, 11));
+            wlTip.setForeground(COLOR_TEXT_MUTED);
+
+            JPanel wlHeaderPanel = new JPanel(new GridLayout(2, 1, 4, 4));
+            wlHeaderPanel.setOpaque(false);
+            wlHeaderPanel.add(wlHeader);
+            wlHeaderPanel.add(wlTip);
 
             DefaultListModel<String> wlListModel = new DefaultListModel<>();
             for (SecurityScanner.SecurityReport rep : activeReports) {
@@ -335,7 +303,7 @@ public class NativeSecurityWindow {
                 JOptionPane.showMessageDialog(frame, addedCount + " mod(s) have been added to your Whitelist!\nThey will evaluate to 0/100 CLEAN on launch.", "Whitelist Saved", JOptionPane.INFORMATION_MESSAGE);
             });
 
-            whitelistSection.add(wlHeader, BorderLayout.NORTH);
+            whitelistSection.add(wlHeaderPanel, BorderLayout.NORTH);
             whitelistSection.add(new JScrollPane(wlJList), BorderLayout.CENTER);
             whitelistSection.add(batchWhitelistBtn, BorderLayout.SOUTH);
 
