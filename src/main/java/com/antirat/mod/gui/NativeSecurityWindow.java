@@ -248,11 +248,6 @@ public class NativeSecurityWindow {
             int total = jarFiles.length;
             for (int i = 0; i < total; i++) {
                 File jar = jarFiles[i];
-                String jName = jar.getName().toLowerCase();
-                if (jName.contains("byteguard") || jName.contains("antirat")) {
-                    doneCount.incrementAndGet();
-                    continue;
-                }
 
                 final String scanning = "Scanning: " + jar.getName();
                 final int idx = i;

@@ -991,7 +991,13 @@ public class SecurityScanner {
                 cap.contains("JAR Signature Verification FAILED") ||
                 cap.contains("Tampered JAR Signature") ||
                 cap.contains("MANIFEST: Agent-Class") ||
-                cap.contains("META-INF/services: Java Instrumentation")) {
+                cap.contains("META-INF/services: Java Instrumentation") ||
+                cap.contains("Direct Process Execution") ||
+                cap.contains("ScriptEngine") ||
+                cap.contains("JNDI InitialContext") ||
+                cap.contains("VirtualMachine.attach") ||
+                cap.contains("Robot.createScreenCapture") ||
+                cap.contains("KeyboardFocusManager")) {
                 hasActualMalwareSignature = true;
                 break;
             }
