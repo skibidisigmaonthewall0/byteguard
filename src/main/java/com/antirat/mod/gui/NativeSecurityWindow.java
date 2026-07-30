@@ -122,7 +122,7 @@ public class NativeSecurityWindow {
             } catch (Exception ignored) {
             }
 
-            JDialog frame = new JDialog((Frame) null, "Anti-RAT Pre-Launch Security Suite", true);
+            JDialog frame = new JDialog((Frame) null, "ByteGuard Pre-Launch Security Suite", true);
             frame.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
             frame.setSize(920, 620);
             frame.setLocationRelativeTo(null);
@@ -289,10 +289,48 @@ public class NativeSecurityWindow {
             mainPanel.add(tabbedPane, BorderLayout.CENTER);
 
             // Bottom Action Buttons Panel with Smooth Animations
-            JPanel actionPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 12, 10));
+            JPanel actionPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 8, 8));
             actionPanel.setBackground(COLOR_BG);
 
-            AnimatedHoverButton allowSelectedBtn = new AnimatedHoverButton("Allow Selected Mod", COLOR_GREEN, COLOR_GREEN_HOVER);
+            AnimatedHoverButton openWebBtn = new AnimatedHoverButton("🌐 Open Report in Web Browser", new Color(0, 170, 200), new Color(0, 210, 240));
+            openWebBtn.addActionListener(e -> {
+                com.antirat.mod.server.LocalReportServer.startAndOpenReport(activeReports);
+            });
+
+            AnimatedHoverButton viewTextBtn = new AnimatedHoverButton("📄 View Text Report", new Color(70, 80, 110), new Color(100, 115, 150));
+            viewTextBtn.addActionListener(e -> {
+                int idx = reportJList.getSelectedIndex();
+                if (idx >= 0 && idx < activeReports.size()) {
+                    SecurityScanner.SecurityReport rep = activeReports.get(idx);
+                    JTextArea ta = new JTextArea(detailsArea.getText());
+                    ta.setEditable(false);
+                    ta.setFont(new Font("Consolas", Font.PLAIN, 12));
+                    JScrollPane sp = new JScrollPane(ta);
+                    sp.setPreferredSize(new Dimension(750, 480));
+                    JOptionPane.showMessageDialog(frame, sp, "Text Report - " + rep.metadata.getName(), JOptionPane.PLAIN_MESSAGE);
+                }
+            });
+
+            AnimatedHoverButton whitelistBtn = new AnimatedHoverButton("🛡️ Whitelist Selected Mod", new Color(0, 150, 120), COLOR_ACCENT);
+            whitelistBtn.addActionListener(e -> {
+                int idx = reportJList.getSelectedIndex();
+                if (idx >= 0 && idx < activeReports.size()) {
+                    SecurityScanner.SecurityReport rep = activeReports.get(idx);
+                    PermissionManager.addToWhitelist(rep.metadata.getModId());
+                    JOptionPane.showMessageDialog(frame, "Mod '" + rep.metadata.getName() + "' is now whitelisted and will evaluate to 0/100 CLEAN.", "Mod Whitelisted", JOptionPane.INFORMATION_MESSAGE);
+                    activeReports.remove(idx);
+                    listModel.remove(idx);
+                    if (activeReports.isEmpty()) {
+                        frame.dispose();
+                        latch.countDown();
+                    } else {
+                        reportJList.setSelectedIndex(Math.min(idx, activeReports.size() - 1));
+                        tabbedPane.setTitleAt(0, "Scanned Mods (" + activeReports.size() + ")");
+                    }
+                }
+            });
+
+            AnimatedHoverButton allowSelectedBtn = new AnimatedHoverButton("Allow Once", COLOR_GREEN, COLOR_GREEN_HOVER);
             allowSelectedBtn.addActionListener(e -> {
                 int idx = reportJList.getSelectedIndex();
                 if (idx >= 0 && idx < activeReports.size()) {
@@ -308,7 +346,7 @@ public class NativeSecurityWindow {
                 }
             });
 
-            AnimatedHoverButton quarantineSelectedBtn = new AnimatedHoverButton("Quarantine Selected & Exit", COLOR_ORANGE, COLOR_ORANGE_HOVER);
+            AnimatedHoverButton quarantineSelectedBtn = new AnimatedHoverButton("Quarantine & Exit", COLOR_ORANGE, COLOR_ORANGE_HOVER);
             quarantineSelectedBtn.addActionListener(e -> {
                 int idx = reportJList.getSelectedIndex();
                 if (idx >= 0 && idx < activeReports.size()) {
@@ -321,20 +359,9 @@ public class NativeSecurityWindow {
                 }
             });
 
-            AnimatedHoverButton quarantineAllBtn = new AnimatedHoverButton("Quarantine ALL Mods & Exit", new Color(190, 50, 20), COLOR_RED_HOVER);
-            quarantineAllBtn.addActionListener(e -> {
-                for (SecurityScanner.SecurityReport rep : activeReports) {
-                    if (rep.metadata.getJarFile() != null) {
-                        QuarantineManager.moveJarToQuarantine(rep.metadata.getJarFile());
-                    }
-                }
-                JOptionPane.showMessageDialog(frame, "All flagged mods moved to .minecraft/quarantine.\nMinecraft will now shut down to protect your system.", "Quarantine Complete", JOptionPane.WARNING_MESSAGE);
-                System.exit(0);
-            });
-
             AnimatedHoverButton exitBtn = new AnimatedHoverButton("Terminate Minecraft", COLOR_RED, COLOR_RED_HOVER);
             exitBtn.addActionListener(e -> {
-                System.out.println("[AntiRAT] User terminated Minecraft execution from Security Gate.");
+                System.out.println("[ByteGuard] User terminated Minecraft execution from Security Gate.");
                 System.exit(0);
             });
 
@@ -405,10 +432,12 @@ public class NativeSecurityWindow {
                 }, "AntiRAT-Rescan").start();
             });
 
+            actionPanel.add(openWebBtn);
+            actionPanel.add(viewTextBtn);
+            actionPanel.add(whitelistBtn);
             actionPanel.add(scanAgainBtn);
             actionPanel.add(allowSelectedBtn);
             actionPanel.add(quarantineSelectedBtn);
-            actionPanel.add(quarantineAllBtn);
             actionPanel.add(exitBtn);
 
             mainPanel.add(actionPanel, BorderLayout.SOUTH);

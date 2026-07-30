@@ -260,6 +260,12 @@ public class SecurityScanner {
             return new SecurityReport(meta, SuspicionLevel.CLEAN, 0, capabilities, new ObfuscationDetector.ObfuscationResult(0, List.of()), reasons, flaggedStrings);
         }
 
+        // ── USER MOD WHITELIST CHECK ─────────────────────────────────────────
+        if (meta.getModId() != null && com.antirat.mod.manager.PermissionManager.isWhitelisted(meta.getModId())) {
+            capabilities.add("Whitelisted User Mod (Verified 0/100 CLEAN)");
+            return new SecurityReport(meta, SuspicionLevel.CLEAN, 0, capabilities, new ObfuscationDetector.ObfuscationResult(0, List.of()), reasons, flaggedStrings);
+        }
+
         // ── THREAT DATABASE: SHA-256 hash + mod ID + dev/neko + Updater.class + Ethereum RPC ──
         ThreatDatabase.ThreatResult threat = ThreatDatabase.scanJar(jarFile, meta.getModId());
         score += threat.scoreAdded;
@@ -454,8 +460,8 @@ public class SecurityScanner {
                                 flaggedStrings.add("[NESTED JAR] " + entry.getName());
                                 flaggedStrings.addAll(nestedReport.flaggedStrings);
                             } else {
-                                capabilities.add("Embedded JAR/ZIP resource: " + entry.getName() + " (verify legitimacy)");
-                                score += 15;
+                                capabilities.add("Embedded JAR/ZIP resource: " + entry.getName() + " (CLEAN 0/100)");
+                                // Clean nested library JARs (LWJGL, Kotlin, Fabric) add 0 score penalty
                             }
                         }
                         tempJar.delete();

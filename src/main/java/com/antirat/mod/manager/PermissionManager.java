@@ -47,6 +47,12 @@ public class PermissionManager {
         SettingsStorage.save();
     }
 
+    public static boolean isWhitelisted(String modId) {
+        if (modId == null) return false;
+        return SettingsStorage.getData().whitelistMods.contains(modId) ||
+               SettingsStorage.getData().whitelistMods.contains(modId.toLowerCase());
+    }
+
     public static void addToBlacklist(String modId) {
         SettingsStorage.getData().blacklistMods.add(modId);
         SettingsStorage.getData().whitelistMods.remove(modId);
