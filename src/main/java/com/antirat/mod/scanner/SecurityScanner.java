@@ -507,24 +507,27 @@ public class SecurityScanner {
                     Deobfuscator.DeobfuscationReport deobf = Deobfuscator.analyzeClass(cn);
 
                     // ── Integrate all deobfuscator signals ──────────────────
-                    if (deobf.hasXorDecryptionLoop)        { score += 30; capabilities.add("XOR Bitwise String Decryption"); }
-                    if (deobf.hasArithmeticStringBuilding) { score += 45; capabilities.add("Arithmetic Delta I2C String Builder (XOR-free obfuscation)"); }
+                    // NOTE: scores below are calibrated to avoid false positives on legitimate mods.
+                    // Structural heuristics (I2C, StringBuilder) are very common in clean Java code,
+                    // so they only add minor weight — real malware needs C2/process/exfil to score high.
+                    if (deobf.hasXorDecryptionLoop)        { score += 12; capabilities.add("XOR Bitwise String Decryption"); }
+                    if (deobf.hasArithmeticStringBuilding) { score +=  8; capabilities.add("Arithmetic Delta I2C String Builder (XOR-free obfuscation)"); }
                     if (deobf.hasDesktopOpen)              { score += 80; capabilities.add("Desktop.open() — Runtime.exec Bypass"); }
-                    if (deobf.hasEnvPathLookup)            { score += 40; capabilities.add("System.getenv() Sensitive Path Lookup"); }
-                    if (deobf.hasDelayedExecution)         { score += 55; capabilities.add("Delayed Execution (Thread.sleep / Timer — scan evasion)"); }
+                    if (deobf.hasEnvPathLookup)            { score += 20; capabilities.add("System.getenv() Sensitive Path Lookup"); }
+                    if (deobf.hasDelayedExecution)         { score += 15; capabilities.add("Delayed Execution (Thread.sleep / Timer — scan evasion)"); }
                     if (deobf.hasScriptEngine)             { score += 90; capabilities.add("ScriptEngine / Nashorn JS Arbitrary Code Evaluation"); }
                     if (deobf.hasJndiLookup)               { score += 95; capabilities.add("JNDI InitialContext.lookup() Remote Code Execution"); }
-                    if (deobf.hasNativeMethods)            { score += 50; capabilities.add("Native JNI Method Declaration"); }
+                    if (deobf.hasNativeMethods)            { score += 15; capabilities.add("Native JNI Method Declaration"); }
                     if (deobf.hasSecurityManagerBypass)    { score += 60; capabilities.add("SecurityManager Nullification / Sandbox Bypass"); }
-                    if (deobf.hasScreenCapture)            { score += 70; capabilities.add("Robot.createScreenCapture() — Screen Exfiltration"); }
+                    if (deobf.hasScreenCapture)            { score += 75; capabilities.add("Robot.createScreenCapture() — Screen Exfiltration"); }
                     if (deobf.hasClipboardAccess)          { score += 65; capabilities.add("Clipboard Access — Crypto Address Hijack Risk"); }
-                    if (deobf.hasKeylogger)                { score += 80; capabilities.add("KeyboardFocusManager — Global Keylogger Hook"); }
-                    if (deobf.hasDeserializationExploit)   { score += 55; capabilities.add("ObjectInputStream Deserialization Gadget Chain"); }
-                    if (deobf.hasAgentInjection)           { score += 85; capabilities.add("VirtualMachine.attach() — Java Agent Injection"); }
-                    if (deobf.hasMethodHandles)            { score += 45; capabilities.add("MethodHandles Runtime Method Resolution Bypass"); }
-                    if (deobf.hasUnsafeUsage)              { score += 60; capabilities.add("sun.misc.Unsafe Direct Memory / Class Bypass"); }
-                    if (deobf.hasStringBuilderObfuscation) { score += 30; capabilities.add("StringBuilder Char-by-Char Append Obfuscation"); }
-                    if (deobf.hasUrlClassLoader)           { score += 50; capabilities.add("URLClassLoader / Remote Class Loading"); }
+                    if (deobf.hasKeylogger)                { score += 85; capabilities.add("KeyboardFocusManager — Global Keylogger Hook"); }
+                    if (deobf.hasDeserializationExploit)   { score += 35; capabilities.add("ObjectInputStream Deserialization Gadget Chain"); }
+                    if (deobf.hasAgentInjection)           { score += 90; capabilities.add("VirtualMachine.attach() — Java Agent Injection"); }
+                    if (deobf.hasMethodHandles)            { score += 10; capabilities.add("MethodHandles Runtime Method Resolution Bypass"); }
+                    if (deobf.hasUnsafeUsage)              { score += 25; capabilities.add("sun.misc.Unsafe Direct Memory / Class Bypass"); }
+                    if (deobf.hasStringBuilderObfuscation) { score +=  5; capabilities.add("StringBuilder Char-by-Char Append Obfuscation"); }
+                    if (deobf.hasUrlClassLoader)           { score += 45; capabilities.add("URLClassLoader / Remote Class Loading"); }
 
                     for (String uncovered : deobf.uncoveredStrings) {
                         flagStr(uncovered, flaggedStrings);
@@ -857,12 +860,24 @@ public class SecurityScanner {
                                         score += 60;
                                     }
 
-                                    // Any other plain HTTP/HTTPS URL in a mod — flag and show
+                                    // Plain URL — only flag if not a trusted community/project domain
+                                    boolean isTrustedUrl = s.contains("modrinth.com") || s.contains("curseforge.com") ||
+                                        s.contains("github.com") || s.contains("ko-fi.com") ||
+                                        s.contains("patreon.com") || s.contains("caffeinemc.net") ||
+                                        s.contains("fabricmc.net") || s.contains("quiltmc.org") ||
+                                        s.contains("minecraft.net") || s.contains("mojang.com") ||
+                                        s.contains("optifine.net") || s.contains("spongepowered.org") ||
+                                        s.contains("liteloader.com") || s.contains("forge") ||
+                                        s.contains("discord.gg") || s.contains("discord.com/invite") ||
+                                        s.contains("twitter.com") || s.contains("x.com") ||
+                                        s.contains("youtube.com") || s.contains("twitch.tv") ||
+                                        s.contains("buymeacoffee.com") || s.contains("paypal.com");
                                     if (!isExecDownload && !isPasteSite &&
                                         !s.contains("api.telegram.org") &&
-                                        !s.contains("discord.com/api/webhooks")) {
+                                        !s.contains("discord.com/api/webhooks") &&
+                                        !isTrustedUrl) {
                                         flagStr("[URL] " + str, flaggedStrings);
-                                        score += 15;
+                                        // Do not add score for plain URLs — they are informational only
                                     }
                                 }
 
@@ -925,15 +940,21 @@ public class SecurityScanner {
 
         boolean hasActualMalwareSignature = false;
         for (String cap : capabilities) {
+            // Only DEFINITIVE malware signals bypass the trusted-mod score zeroing.
+            // Structural heuristics (XOR, StringBuilder, I2C, MethodHandles) are NOT definitive alone.
             if (cap.contains("KNOWN MALWARE") || cap.contains("Discord Webhook") ||
                 cap.contains("Discord Bot Token") || cap.contains("Telegram Bot Token") ||
                 cap.contains("SHA-256 MATCHES") || cap.contains("BLOCKED MOD ID") ||
                 cap.contains("Fractureiser") || cap.contains("WeedHack") ||
-                cap.contains("SilentNet") || cap.contains("SCREENSHOT EXFILTRATION") ||
-                cap.contains("EtherHiding") || cap.contains("C2 / Exfiltration") ||
-                cap.contains("Raw IP C2 Address") || cap.contains("URLClassLoader") ||
-                cap.contains("Custom ClassLoader Subclass") || cap.contains("Direct Process Execution") ||
-                cap.contains("XOR Bitwise String Decryption") || cap.contains("ScriptEngine")) {
+                cap.contains("SilentNet") || cap.contains("Robot.createScreenCapture") ||
+                cap.contains("EtherHiding") || cap.contains("Telegram Bot API C2") ||
+                cap.contains("Raw IP C2 Address") || cap.contains("!! Raw IP") ||
+                cap.contains("Custom ClassLoader Subclass") ||
+                cap.contains("Direct Process Execution") ||
+                cap.contains("ScriptEngine") || cap.contains("JNDI") ||
+                cap.contains("VirtualMachine.attach") || cap.contains("KeyboardFocusManager") ||
+                cap.contains("Desktop.open") || cap.contains("SecurityManager Nullification") ||
+                cap.contains("Paste Site Payload Staging") || cap.contains("Hardcoded Executable File Download")) {
                 hasActualMalwareSignature = true;
                 break;
             }
