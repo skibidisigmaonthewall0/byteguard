@@ -445,7 +445,17 @@ public class NativeSecurityWindow {
         JLabel detailTitle = new JLabel("Select a mod to view report", SwingConstants.LEFT);
         detailTitle.setFont(new Font("Segoe UI", Font.BOLD, 13));
         detailTitle.setForeground(TEXT);
-        detailTitle.setBorder(new EmptyBorder(0, 0, 6, 0));
+
+        AnimatedHoverButton openWebBtn = new AnimatedHoverButton("🌐 Open Web Report", BLUE, BLUE_H);
+        openWebBtn.setPreferredSize(new Dimension(160, 28));
+        openWebBtn.setFont(new Font("Segoe UI", Font.BOLD, 11));
+        openWebBtn.setVisible(false);
+
+        JPanel detailHeader = new JPanel(new BorderLayout(8, 0));
+        detailHeader.setBackground(BG);
+        detailHeader.setBorder(new EmptyBorder(0, 0, 6, 0));
+        detailHeader.add(detailTitle, BorderLayout.WEST);
+        detailHeader.add(openWebBtn, BorderLayout.EAST);
 
         JTextArea detailArea = new JTextArea();
         detailArea.setEditable(false);
@@ -458,7 +468,7 @@ public class NativeSecurityWindow {
 
         JPanel detailPanel = new JPanel(new BorderLayout(6, 6));
         detailPanel.setBackground(BG);
-        detailPanel.add(detailTitle, BorderLayout.NORTH);
+        detailPanel.add(detailHeader, BorderLayout.NORTH);
         detailPanel.add(new JScrollPane(detailArea), BorderLayout.CENTER);
 
         modList.addListSelectionListener(e -> {
@@ -467,6 +477,25 @@ public class NativeSecurityWindow {
             SecurityScanner.SecurityReport r = filteredReports.get(idx);
             int displayScore = Math.min(100, r.suspicionScore);
             detailTitle.setText(r.metadata.getName() + " — " + r.suspicionLevel.label + " (" + displayScore + "/100)");
+
+            // Register report with local server & setup button action
+            com.antirat.mod.server.LocalReportServer.registerReport(r);
+            openWebBtn.setVisible(true);
+
+            // Remove old listeners
+            for (java.awt.event.ActionListener al : openWebBtn.getActionListeners()) {
+                openWebBtn.removeActionListener(al);
+            }
+            openWebBtn.addActionListener(evt -> {
+                try {
+                    String url = com.antirat.mod.server.LocalReportServer.getReportUrl(r);
+                    if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+                        Desktop.getDesktop().browse(new java.net.URI(url));
+                    }
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                }
+            });
 
             StringBuilder sb = new StringBuilder();
             sb.append("====================================================\n");
