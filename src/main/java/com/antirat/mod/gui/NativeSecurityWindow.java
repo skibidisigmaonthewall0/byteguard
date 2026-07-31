@@ -382,8 +382,13 @@ public class NativeSecurityWindow {
             for (SecurityScanner.SecurityReport rep : filteredReports) {
                 int s = Math.min(100, rep.suspicionScore);
                 String prefix = rep.suspicionLevel == SecurityScanner.SuspicionLevel.CLEAN ? "[✓]" : "[!]";
+                String jarName = rep.metadata.getJarFile() != null ? rep.metadata.getJarFile().getName() : "";
+                String displayName = rep.metadata.getName();
+                if (!jarName.isEmpty() && !displayName.equalsIgnoreCase(jarName)) {
+                    displayName += " (" + jarName + ")";
+                }
                 listModel.addElement(String.format("%s %s — %s (%d/100)",
-                    prefix, rep.metadata.getName(), rep.suspicionLevel.label, s));
+                    prefix, displayName, rep.suspicionLevel.label, s));
             }
         };
         rebuildModList.run();

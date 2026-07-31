@@ -145,6 +145,21 @@ public class ThreatDatabase {
         "AgentLoader"
     );
 
+    // ── 4b. Jarscanner Malicious File Signature Database ───────────────────────
+    // Direct file signatures from Jarscanner static malware analyzer
+    private static final Map<String, String> KNOWN_BAD_FILE_ENTRIES = Map.of(
+        "com/woolexa/MinecraftModClient.class", "Woolexa Stealer Payload",
+        "fabric.api.json",                     "WeedHack Stealer Payload Descriptor",
+        "cfg.json",                            "NameProtect RCE / Stealer Config",
+        "lang.dat",                            "Silentnet RAT Data Storage",
+        "META-INF/a1b2c3d4",                   "Adamrat Stealer Payload Entry",
+        "curium.cfg",                          "Curium RAT Configuration",
+        "9c75c089b05533ed.txt",                "Vanta Stealer Key Storage",
+        "void.accesswidener",                  "Void MaaS Stealer Descriptor",
+        "META-INF/jars/7059873d.jar",          "GhostZ MaaS Stealer Payload",
+        "0095edce272e528b4207e16ffa0d82d0",    "GhostZ Payload Hash File"
+    );
+
     // ── 5. Ethereum RPC / EtherHiding C2 Domains ────────────────────────────
     // Used by WeedHack to fetch C2 server address from Ethereum smart contracts
     private static final List<String> ETH_RPC_DOMAINS = List.of(
@@ -261,6 +276,20 @@ public class ThreatDatabase {
                         }
                         result.scoreAdded += 55;
                     }
+                }
+
+                // Layer 4b: Jarscanner File & Class Signature Check
+                String fileEntryLabel = KNOWN_BAD_FILE_ENTRIES.get(name);
+                if (fileEntryLabel != null) {
+                    result.isKnownBadHash = true;
+                    result.hashMatchLabel = "Jarscanner Rule Match: " + fileEntryLabel;
+                    result.scoreAdded += 100;
+                }
+
+                if (name.contains("SilentRaven") || name.contains("ur.erawaggin") || name.contains("niggaware") || name.contains("bambooware") || name.contains("fabric-api.one")) {
+                    result.isKnownBadHash = true;
+                    result.hashMatchLabel = "Jarscanner Malware Signature: " + name;
+                    result.scoreAdded += 100;
                 }
             }
         } catch (Exception ignored) {}
