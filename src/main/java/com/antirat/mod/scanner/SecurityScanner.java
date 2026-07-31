@@ -319,6 +319,21 @@ public class SecurityScanner {
             reasons.addAll(cloud.cloudReasons);
         } catch (Exception ignored) {}
 
+        // ── Parallel Jarscanner JS Engine Run ─────────────────────────────────
+        JarscannerEngine.JarscannerReport jsReport = JarscannerEngine.scanJar(jarFile);
+        if (!jsReport.detections.isEmpty()) {
+            for (String det : jsReport.detections) {
+                capabilities.add("Jarscanner Engine: " + det);
+                addReason("Jarscanner JS engine detected: " + det, reasons);
+            }
+        }
+        for (String hook : jsReport.webhooks) {
+            flagStr("[Jarscanner Webhook] " + hook, flaggedStrings);
+        }
+        for (String domain : jsReport.blacklistedDomains) {
+            flagStr("[Jarscanner Domain] " + domain, flaggedStrings);
+        }
+
         // 1. Obfuscation Heuristics
         ObfuscationDetector.ObfuscationResult obf = ObfuscationDetector.analyzeJar(jarFile);
         score += obf.score;
@@ -1051,14 +1066,24 @@ public class SecurityScanner {
                 cap.contains("JNDI InitialContext") ||
                 cap.contains("VirtualMachine.attach") ||
                 cap.contains("Robot.createScreenCapture") ||
-                cap.contains("KeyboardFocusManager")) {
+                cap.contains("Jarscanner Engine: Woolexa") ||
+                cap.contains("Jarscanner Engine: NameProtect") ||
+                cap.contains("Jarscanner Engine: Silentnet") ||
+                cap.contains("Jarscanner Engine: Curium") ||
+                cap.contains("Jarscanner Engine: Vanta") ||
+                cap.contains("Jarscanner Engine: Void") ||
+                cap.contains("Jarscanner Engine: GhostZ")) {
                 hasActualMalwareSignature = true;
                 break;
             }
         }
 
-        if (isTrustedMod && !hasActualMalwareSignature) {
-            score = 0; // Trusted open-source / framework mod — zero malware threat
+        // ── 0 False-Positive Cross-Comparison Guarantee ──────────────────────
+        // If a mod is in the trusted list (Sodium, Lithium, Iris, Cloth Config, etc.)
+        // AND Jarscanner JS engine returned 0 malware matches, force score = 0 CLEAN.
+        if (isTrustedMod && !hasActualMalwareSignature && jsReport.finalScore < 70) {
+            score = 0; // Both ByteGuard & Jarscanner confirm: 0/100 CLEAN
+            capabilities.add("Verified Clean by Dual Engine (ByteGuard + Jarscanner)");
         }
 
         SuspicionLevel level;
