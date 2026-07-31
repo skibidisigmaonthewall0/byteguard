@@ -1,0 +1,720 @@
+import {
+    add as addDisasm,
+    all as disasms,
+    type Disassembler,
+    find as findDisasm,
+    remove as removeDisasm,
+} from "$lib/disasm";
+import { createSource as createClassSource, createResources } from "$lib/disasm/source";
+import { add as addTl, remove as removeTl, tl, type TranslationKey } from "$lib/i18n";
+import type { Language } from "$lib/lang";
+import { error, warn } from "$lib/log";
+import { workers } from "$lib/reader";
+import type { MappingType } from "$lib/reader/mappings";
+import { analysisJdkClasses, locale, scriptingScripts } from "$lib/state";
+import {
+    current as currentTab,
+    dynamicTabDefs,
+    find as findTab,
+    open as openTab,
+    openUnscoped as openUnscopedTab,
+    refresh as refreshTab,
+    type Tab,
+    tabDefs,
+    tabs,
+} from "$lib/tab";
+import { base64Encode, cancellable, cyrb53 } from "$lib/utils";
+import {
+    type ClassEntry,
+    clear as clearWs,
+    entries,
+    type Entry,
+    EntryType,
+    load as loadEntry,
+    remove as removeEntry,
+} from "$lib/workspace";
+import { AnalysisState, analyze } from "$lib/workspace/analysis";
+import { mappings } from "$lib/workspace/analysis/mapping";
+import { mappingSet } from "$lib/workspace/analysis/mapping/data";
+import {
+    DataType,
+    type FileData,
+    memoryData,
+    type MemoryData,
+    unwrapTransforms,
+    type ZipData,
+} from "$lib/workspace/data";
+import { write as writeMappings } from "$lib/writer/mappings";
+import type {
+    ArchiveEntryMetadata,
+    DisassemblerContext,
+    EditorContext,
+    EntryMetadata,
+    Event,
+    EventListener,
+    EventMap,
+    EventType,
+    FileMetadata,
+    I18NContext,
+    MappingContext,
+    NotificationContext,
+    NotificationOptions,
+    Script,
+    ScriptContext,
+    Disassembler as ScriptDisassembler,
+    Entry as ScriptEntry,
+    MappingType as ScriptMappingType,
+    Tab as ScriptTab,
+    TabDeclaration,
+    WorkspaceContext,
+} from "@run-slicer/script";
+import { toast } from "svelte-sonner";
+import { get, writable } from "svelte/store";
+
+export const enum ScriptState {
+    UNLOADED,
+    LOADED,
+    FAILED,
+}
+
+export interface ProtoScript {
+    url: string;
+    name: string;
+    id: string;
+    state: ScriptState;
+    script: Script | null;
+    context: ScriptContext | null;
+}
+
+const deriveScriptName = (url: string, name?: string): string => {
+    if (name) return name;
+    if (url.startsWith("data:")) return `script-${cyrb53(url).toString(16).slice(0, 8)}`;
+    try {
+        const u = new URL(url);
+        return u.pathname.substring(u.pathname.lastIndexOf("/") + 1) || url;
+    } catch {
+        return url;
+    }
+};
+
+export const displayName = (proto: ProtoScript): string => {
+    return proto.script?.name ?? proto.name;
+};
+
+export const scripts = writable<ProtoScript[]>([]);
+
+export const wrapMetadata = (e: Entry): EntryMetadata => {
+    const unwrappedData = unwrapTransforms(e.data);
+    switch (unwrappedData.type) {
+        case DataType.FILE:
+            return {
+                type: "file",
+                size: unwrappedData.size,
+                lastModified: new Date((unwrappedData as FileData).file.lastModified),
+            } as FileMetadata;
+        case DataType.ZIP: {
+            const zipEntry = (unwrappedData as ZipData).entry;
+
+            return {
+                type: "archive_entry",
+                size: unwrappedData.size,
+                lastModified: zipEntry.lastModDate,
+                uncompressedSize: zipEntry.uncompressedSize,
+                compressionMethod: zipEntry.compressionMethod,
+                crc32: zipEntry.crc32,
+            } as ArchiveEntryMetadata;
+        }
+    }
+
+    return { type: "unknown", size: unwrappedData.size };
+};
+
+export const wrapEntry = (e: Entry): ScriptEntry => {
+    return {
+        _entry: e,
+        get type() {
+            return e.type;
+        },
+        name: e.name,
+        meta: wrapMetadata(e),
+        bytes(): Promise<Uint8Array> {
+            return unwrapTransforms(e.data).bytes();
+        },
+        blob(): Promise<Blob> {
+            return unwrapTransforms(e.data).blob();
+        },
+    } as ScriptEntry;
+};
+
+const unwrapEntry = (e: ScriptEntry): Entry => {
+    const entry = (e as any)._entry;
+    if (entry) {
+        return entry;
+    }
+
+    throw new Error("Could not unwrap script entry");
+};
+
+const wrapTab = (t: Tab): ScriptTab => {
+    return {
+        type: t.type,
+        id: t.id,
+        label: tl(t.name || `tab.${t.type}`),
+        get position() {
+            return t.position;
+        },
+        get active() {
+            return Boolean(t.active);
+        },
+        entry: t.entry ? wrapEntry(t.entry) : null,
+    };
+};
+
+const wrapDisasm = (disasm: Disassembler): ScriptDisassembler => {
+    return {
+        _disasm: disasm,
+        id: disasm.id,
+        label: disasm.name,
+        version: disasm.version,
+        language: disasm.language(),
+        get options() {
+            return disasm.options;
+        },
+        set options(options) {
+            disasm.options = options;
+        },
+
+        async class(name, source): Promise<string> {
+            const data = await source(name);
+            if (!data) {
+                return "";
+            }
+
+            // create simulated entry
+            let entry: Entry = {
+                type: EntryType.FILE,
+                name: "",
+                shortName: "",
+                data: {
+                    type: DataType.MEMORY,
+                    name: "",
+                    data,
+                } as MemoryData,
+                state: AnalysisState.NONE,
+            };
+
+            await analyze(entry, AnalysisState.FULL);
+            if (entry.type !== EntryType.CLASS) {
+                warn(`script tried to disassemble non-class (disassembler id: ${disasm.id})`);
+                return "";
+            }
+
+            return disasm.class(entry as ClassEntry);
+        },
+        method: disasm.method
+            ? async (name, signature, source) => {
+                  const data = await source(name);
+                  if (!data) {
+                      return "";
+                  }
+
+                  // create simulated entry
+                  let entry: Entry = {
+                      type: EntryType.FILE,
+                      name: "",
+                      shortName: "",
+                      data: {
+                          type: DataType.MEMORY,
+                          name: "",
+                          data,
+                      } as MemoryData,
+                      state: AnalysisState.NONE,
+                  };
+
+                  await analyze(entry, AnalysisState.FULL);
+                  if (entry.type !== EntryType.CLASS) {
+                      warn(`script tried to disassemble non-class (disassembler id: ${disasm.id})`);
+                      return "";
+                  }
+
+                  const classEntry = entry as ClassEntry;
+                  const method = classEntry.node.methods.find((m) => {
+                      return m.name.string + m.type.string === signature;
+                  });
+                  if (!method) {
+                      return "";
+                  }
+
+                  return disasm.method!(classEntry, method);
+              }
+            : undefined,
+    } as ScriptDisassembler;
+};
+
+const unwrapDisasm = (disasm: ScriptDisassembler): Disassembler => {
+    const wrapped = (disasm as any)._disasm;
+    if (wrapped) {
+        return wrapped;
+    }
+
+    return {
+        id: disasm.id,
+        name: disasm.label,
+        version: disasm.version,
+        language(): Language {
+            return disasm.language as Language;
+        },
+        get options() {
+            return disasm.options ?? {};
+        },
+        set options(options) {
+            disasm.options = options;
+        },
+
+        class(entry) {
+            return cancellable(async () => {
+                const { node, data } = entry;
+
+                const buf = await data.bytes();
+                const name = node.thisClass.nameEntry!.string;
+
+                const needJdk = get(analysisJdkClasses);
+                return disasm.class(name, createClassSource(name, buf, needJdk), createResources(needJdk));
+            });
+        },
+        method: disasm.method
+            ? (entry, method) => {
+                  return cancellable(async () => {
+                      const { node, data } = entry;
+
+                      const buf = await data.bytes();
+                      const name = node.thisClass.nameEntry!.string;
+                      const signature = method.name.string + method.type.string;
+
+                      const needJdk = get(analysisJdkClasses);
+                      return disasm.method!(
+                          name,
+                          signature,
+                          createClassSource(name, buf, needJdk),
+                          createResources(needJdk)
+                      );
+                  });
+              }
+            : undefined,
+    };
+};
+
+const createEditorCtx = (context: ScriptContext): EditorContext => {
+    return {
+        register(decl: TabDeclaration): void {
+            dynamicTabDefs.update(($scriptTabDefs) => {
+                $scriptTabDefs.set(decl.id, { context, decl });
+                return $scriptTabDefs;
+            });
+        },
+        unregister(id: string): void {
+            dynamicTabDefs.update(($scriptTabDefs) => {
+                $scriptTabDefs.delete(id);
+                return $scriptTabDefs;
+            });
+        },
+        tabs(): ScriptTab[] {
+            return Array.from(get(tabs).values()).map(wrapTab);
+        },
+        find(id: string): ScriptTab | null {
+            const tab = findTab(id);
+            return tab ? wrapTab(tab) : null;
+        },
+        current(): ScriptTab | null {
+            const tab = get(currentTab);
+            return tab ? wrapTab(tab) : null;
+        },
+        async refresh(id: string, hard: boolean = false) {
+            const tab = findTab(id);
+            if (tab) {
+                await refreshTab(tab, hard);
+            }
+        },
+        async add(type: string, entry?: ScriptEntry): Promise<ScriptTab> {
+            const e = entry ? unwrapEntry(entry) : null;
+            if (e) {
+                return wrapTab(await openTab(e, type));
+            }
+
+            const def = get(tabDefs).find((d) => d.type === type);
+            if (def) {
+                return wrapTab(await openUnscopedTab(def));
+            }
+
+            throw new Error("Invalid tab type");
+        },
+        remove(id: string) {
+            removeEntry(id);
+        },
+        clear() {
+            clearWs();
+        },
+    };
+};
+
+const disasmCtx: DisassemblerContext = {
+    all(): ScriptDisassembler[] {
+        return Array.from(get(disasms).values()).map(wrapDisasm);
+    },
+    find(id: string): ScriptDisassembler | null {
+        const disasm = findDisasm(id);
+        return disasm ? wrapDisasm(disasm) : null;
+    },
+    add(disasm: ScriptDisassembler) {
+        addDisasm(unwrapDisasm(disasm));
+    },
+    remove(id: string) {
+        removeDisasm(id);
+    },
+};
+
+const workspaceCtx: WorkspaceContext = {
+    entries(): ScriptEntry[] {
+        return Array.from(get(entries).values()).map(wrapEntry);
+    },
+    find(name: string): ScriptEntry | null {
+        const entry = get(entries).get(name);
+        return entry ? wrapEntry(entry) : null;
+    },
+    async add(name: string, data: Uint8Array | Blob): Promise<ScriptEntry> {
+        const results = await loadEntry(memoryData(name, data));
+
+        return wrapEntry(results.pop()!.entry);
+    },
+    remove(id: string) {
+        removeEntry(id);
+    },
+    clear() {
+        clearWs();
+    },
+};
+
+const mappingCtx: MappingContext = {
+    clear(): void {
+        if (this.size() === 0) {
+            return; // no-op
+        }
+
+        mappings.set(mappingSet());
+    },
+    export(format: ScriptMappingType): string {
+        return writeMappings(format as MappingType, get(mappings));
+    },
+    async load(data: string, src?: string, dst?: string): Promise<void> {
+        const newMappings = await workers.instance().task((w) => w.mappings(data, src, dst));
+        mappings.update(($mappings) => {
+            $mappings.merge(newMappings);
+            return $mappings;
+        });
+    },
+    size(): number {
+        return get(mappings).size();
+    },
+};
+
+const i18nCtx: I18NContext = {
+    get locale(): string {
+        return get(locale);
+    },
+    add(locale: string, key: TranslationKey, value: string): void {
+        addTl(locale, key, value);
+    },
+    remove(locale: string, key: TranslationKey): void {
+        removeTl(locale, key);
+    },
+    t(key: TranslationKey, ...args: any[]): string {
+        return tl(key, ...args);
+    },
+};
+
+const notificationCtx: NotificationContext = {
+    info(message: string, options?: NotificationOptions): string | number {
+        return toast.info(tl(message, ...(options?.msgArgs ?? [])), {
+            id: options?.id,
+            duration: options?.duration,
+            description: options?.description
+                ? tl(options.description, ...(options?.descriptionArgs ?? []))
+                : undefined,
+        });
+    },
+    success(message: string, options?: NotificationOptions): string | number {
+        return toast.success(tl(message, ...(options?.msgArgs ?? [])), {
+            id: options?.id,
+            duration: options?.duration,
+            description: options?.description
+                ? tl(options.description, ...(options?.descriptionArgs ?? []))
+                : undefined,
+        });
+    },
+    warning(message: string, options?: NotificationOptions): string | number {
+        return toast.warning(tl(message, ...(options?.msgArgs ?? [])), {
+            id: options?.id,
+            duration: options?.duration,
+            description: options?.description
+                ? tl(options.description, ...(options?.descriptionArgs ?? []))
+                : undefined,
+        });
+    },
+    error(message: string, options?: NotificationOptions): string | number {
+        return toast.error(tl(message, ...(options?.msgArgs ?? [])), {
+            id: options?.id,
+            duration: options?.duration,
+            description: options?.description
+                ? tl(options.description, ...(options?.descriptionArgs ?? []))
+                : undefined,
+        });
+    },
+    loading(message: string, options?: NotificationOptions): string | number {
+        return toast.loading(tl(message, ...(options?.msgArgs ?? [])), {
+            id: options?.id,
+            duration: options?.duration,
+            description: options?.description
+                ? tl(options.description, ...(options?.descriptionArgs ?? []))
+                : undefined,
+        });
+    },
+    dismiss(id?: string | number): void {
+        toast.dismiss(id);
+    },
+};
+
+const createContext = (script: Script, parent: ScriptContext | null): ScriptContext => {
+    const scriptListeners = new Map<EventType, EventListener<any>[]>();
+    const context: Partial<ScriptContext> = {
+        script,
+        parent,
+        disasm: disasmCtx,
+        workspace: workspaceCtx,
+        mapping: mappingCtx,
+        i18n: i18nCtx,
+        notification: notificationCtx,
+        addEventListener<K extends EventType>(type: K, listener: EventListener<EventMap[K]>) {
+            let listeners = scriptListeners.get(type);
+            if (!listeners) {
+                listeners = [];
+                scriptListeners.set(type, listeners);
+            }
+
+            listeners.push(listener);
+        },
+        removeEventListener<K extends EventType>(type: K, listener: EventListener<EventMap[K]>) {
+            const listeners = scriptListeners.get(type);
+            if (!listeners) {
+                return; // no listeners for type
+            }
+
+            if (listeners.length > 1) {
+                scriptListeners.set(
+                    type,
+                    listeners.filter((l) => l !== listener)
+                );
+            } else {
+                scriptListeners.delete(type);
+            }
+        },
+        async dispatchEvent<E extends Event>(event: E): Promise<E> {
+            const listeners = scriptListeners.get(event.type);
+            if (listeners) {
+                for (const listener of listeners) {
+                    await listener(event, this as ScriptContext);
+                }
+            }
+
+            // no parent? we must be the root, propagate to scripts
+            if (!this.parent) {
+                for (const protoScript of get(scripts)) {
+                    await protoScript.context?.dispatchEvent(event);
+                }
+            }
+            return event;
+        },
+    };
+    // @ts-ignore
+    context.editor = createEditorCtx(context as ScriptContext);
+
+    return context as ScriptContext;
+};
+
+export const rootContext = createContext(
+    {
+        name: "slicer scripting engine",
+        load(_context: ScriptContext): void {},
+        unload(_context: ScriptContext): void {},
+    },
+    null // parent
+);
+
+locale.subscribe(($locale) => {
+    rootContext.dispatchEvent({ type: "locale_change", locale: $locale });
+});
+
+const importScript = async (url: string): Promise<Script> => {
+    let script: Script;
+    try {
+        script = (await import(/* @vite-ignore */ url)).default as Script;
+    } catch (e) {
+        if (e instanceof TypeError) {
+            // MIME type mismatch? try fetching as text and evaluating
+            const res = await fetch(url);
+            if (!res.ok) {
+                throw new Error(`Failed to fetch script: ${res.status} ${res.statusText}`);
+            }
+
+            const dataUrl = `data:text/javascript;base64,${base64Encode(await res.text())}`;
+            script = (await import(/* @vite-ignore */ dataUrl)).default as Script;
+        } else {
+            throw e;
+        }
+    }
+
+    if (!script?.load || !script?.unload) {
+        throw new Error("Invalid script, missing required properties");
+    }
+    return script;
+};
+
+const read0 = async (url: string, name?: string): Promise<ProtoScript> => {
+    const id = cyrb53(url).toString(16);
+    const displayName = deriveScriptName(url, name);
+    try {
+        const script = await importScript(url);
+        return { url, name: displayName, id, state: ScriptState.UNLOADED, script, context: null };
+    } catch (e) {
+        error("failed to read script", e);
+
+        toast.error(tl("toast.error.title.script.generic"), {
+            description: tl("toast.error.script.read", displayName),
+        });
+    }
+
+    return { url, name: displayName, id, state: ScriptState.FAILED, script: null, context: null };
+};
+
+export const read = async (url: string, name?: string): Promise<ProtoScript> => {
+    let script = await read0(url, name);
+    scripts.update(($scripts) => {
+        const existing = $scripts.find((s) => s.id === script.id);
+        if (existing) {
+            // already have this script, use existing reference instead of new one
+            script = existing;
+            return $scripts;
+        }
+
+        $scripts.push(script);
+        return $scripts;
+    });
+
+    return script;
+};
+
+export const load = async (def: ProtoScript): Promise<void> => {
+    if (def.state !== ScriptState.UNLOADED) {
+        return; // no-op
+    }
+
+    try {
+        def.context = createContext(def.script!, rootContext);
+        await def.script!.load(def.context!);
+
+        def.state = ScriptState.LOADED;
+    } catch (e) {
+        error("failed to load script", e);
+        def.state = ScriptState.FAILED;
+
+        toast.error(tl("toast.error.title.script.generic"), {
+            description: tl("toast.error.script.load", def.name),
+        });
+    }
+
+    scripts.update(($scripts) => $scripts); // forcefully synchronize store
+};
+
+export const unload = async (def: ProtoScript): Promise<void> => {
+    if (def.state !== ScriptState.LOADED) {
+        return; // no-op
+    }
+
+    try {
+        const context = def.context!;
+        def.context = null; // prevent any events from being handled from this point on
+
+        await def.script!.unload(context);
+
+        def.state = ScriptState.UNLOADED;
+    } catch (e) {
+        error("failed to unload script", e);
+        def.state = ScriptState.FAILED;
+
+        toast.error(tl("toast.error.title.script.generic"), {
+            description: tl("toast.error.script.unload", def.name),
+        });
+    }
+
+    scripts.update(($scripts) => $scripts); // forcefully synchronize store
+};
+
+export const remove = async (def: ProtoScript): Promise<void> => {
+    await unload(def);
+    scripts.update(($scripts) => $scripts.filter((s) => s.id !== def.id));
+};
+
+export const reload = async (def: ProtoScript): Promise<void> => {
+    const loaded = def.state === ScriptState.LOADED;
+    if (loaded) {
+        await unload(def);
+    }
+
+    try {
+        const url = def.url.startsWith("data:")
+            ? def.url
+            : (() => {
+                  const u = new URL(def.url, window.location.href);
+                  u.searchParams.set("t", Date.now().toString());
+                  return u.toString();
+              })();
+
+        def.script = await importScript(url);
+        def.state = ScriptState.UNLOADED;
+        if (loaded) {
+            await load(def);
+        }
+
+        toast.success(tl("toast.success.title.reload"), {
+            description: tl("toast.success.reload-script", displayName(def)),
+        });
+    } catch (e) {
+        error("failed to reload script", e);
+        def.state = ScriptState.FAILED;
+
+        toast.error(tl("toast.error.title.script.generic"), {
+            description: tl("toast.error.script.load", def.name),
+        });
+    }
+
+    scripts.update(($scripts) => $scripts);
+};
+
+// script loading
+
+Promise.all(
+    get(scriptingScripts).map(async (s) => {
+        const script = await read(s.url, s.name);
+        if (s.load) {
+            await load(script);
+        }
+
+        return script;
+    })
+).then(() => {
+    // start synchronizing stores only after all scripts have tried to load
+    scripts.subscribe(($scripts) => {
+        scriptingScripts.update(() => {
+            return $scripts.map((s) => ({ url: s.url, name: s.name, load: s.state === ScriptState.LOADED }));
+        });
+    });
+});

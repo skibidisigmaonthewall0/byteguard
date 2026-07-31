@@ -1,0 +1,74 @@
+<script lang="ts">
+    import { ChevronsUpDown } from "@lucide/svelte";
+    import {
+        Command,
+        CommandEmpty,
+        CommandGroup,
+        CommandInput,
+        CommandItem,
+        CommandList,
+    } from "$lib/components/ui/command";
+    import { Popover, PopoverContent, PopoverTrigger } from "$lib/components/ui/popover";
+    import { Button } from "$lib/components/ui/button";
+    import type { EventHandler } from "$lib/event";
+    import { type TabPosition, tabDefs } from "$lib/tab";
+    import type { Snippet } from "svelte";
+    import { cn } from "$lib/components/utils";
+    import { t } from "$lib/i18n";
+    import IconComponent from "$lib/components/icon.svelte";
+
+    interface Props {
+        position: TabPosition;
+        align?: "center" | "start" | "end";
+        offset?: boolean;
+        handler: EventHandler;
+        children?: Snippet<[any]>;
+    }
+
+    let { position, align, offset, handler, children }: Props = $props();
+
+    let open = $state(false);
+</script>
+
+<Popover bind:open>
+    <PopoverTrigger class="max-w-[180px]">
+        {#snippet child({ props })}
+            {#if children}
+                {@render children(props)}
+            {:else}
+                <Button
+                    variant="outline"
+                    class="w-[180px] justify-between"
+                    {...props}
+                    role="combobox"
+                    aria-expanded={open}
+                >
+                    {$t("pane.header.open.placeholder")}
+                    <ChevronsUpDown class="opacity-50" />
+                </Button>
+            {/if}
+        {/snippet}
+    </PopoverTrigger>
+    <PopoverContent {align} class={cn("w-[180px] p-0", !offset || "mr-1")}>
+        <Command>
+            <CommandInput placeholder={$t("pane.header.open.placeholder")} />
+            <CommandList>
+                <CommandEmpty>{$t("pane.header.open.no-results")}</CommandEmpty>
+                <CommandGroup>
+                    {#each $tabDefs as def}
+                        <CommandItem
+                            value={def.type}
+                            onSelect={async () => {
+                                open = false;
+                                await handler.openUnscoped(def, position, true);
+                            }}
+                        >
+                            <IconComponent icon={def.icon} />
+                            {$t(def.label || `tab.${def.type}`)}
+                        </CommandItem>
+                    {/each}
+                </CommandGroup>
+            </CommandList>
+        </Command>
+    </PopoverContent>
+</Popover>

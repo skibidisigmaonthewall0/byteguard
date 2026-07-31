@@ -1,0 +1,78 @@
+import type { Language } from "$lib/lang";
+import type { ClassEntry } from "$lib/workspace";
+import type { UTF8Entry } from "@katana-project/asm/pool";
+import { ConstantType } from "@katana-project/asm/spec";
+import type { Disassembler } from "./";
+import { createFromWorker } from "./worker";
+import CFRWorker from "./worker/cfr?worker";
+import JASMWorker from "./worker/jasm?worker";
+import ProcyonWorker from "./worker/procyon?worker";
+import SlicerWorker from "./worker/slicer?worker";
+import VFWorker from "./worker/vf?worker";
+
+export const cfr: Disassembler = createFromWorker(
+    {
+        id: "cfr",
+        name: "CFR",
+        version: "0.152",
+        language: () => "java",
+    },
+    () => new CFRWorker(),
+    true
+);
+
+export const jasm: Disassembler = createFromWorker(
+    {
+        id: "jasm",
+        name: "JASM",
+        version: "2.8.0",
+        language: () => "jasm",
+    },
+    () => new JASMWorker(),
+    true
+);
+
+export const vf: Disassembler = createFromWorker(
+    {
+        id: "vf",
+        name: "Vineflower",
+        version: "1.12.0",
+        language(entry?: ClassEntry): Language {
+            if (!entry) {
+                return "java";
+            }
+
+            const pool = entry.node.pool;
+
+            // search for annotation descriptor
+            const hasMeta = pool.some((e) => {
+                return e?.type === ConstantType.UTF8 && (e as UTF8Entry).string === "Lkotlin/Metadata;";
+            });
+            return ((this as Disassembler).options["kt-enable"] ?? "1") === "1" && hasMeta ? "kotlin" : "java";
+        },
+    },
+    () => new VFWorker(),
+    true
+);
+
+export const procyon: Disassembler = createFromWorker(
+    {
+        id: "procyon",
+        name: "Procyon",
+        version: "0.6.0",
+        language: () => "java",
+    },
+    () => new ProcyonWorker(),
+    false,
+    false // Procyon is weird and wants to scan the entire JDK
+);
+
+export const slicer: Disassembler = createFromWorker(
+    {
+        id: "slicer",
+        name: "slicer",
+        language: () => "java",
+    },
+    () => new SlicerWorker(),
+    true
+);

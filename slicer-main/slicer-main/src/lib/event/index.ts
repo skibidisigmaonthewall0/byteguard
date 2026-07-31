@@ -1,0 +1,34 @@
+import type { Disassembler } from "$lib/disasm";
+import type { MappingType } from "$lib/reader/mappings";
+import type { ProtoScript } from "$lib/script";
+import type { Tab, TabDefinition, TabPosition, TabType, TabTypeOrDynamic } from "$lib/tab";
+import type { Entry } from "$lib/workspace";
+import type { Data } from "$lib/workspace/data";
+import { writable } from "svelte/store";
+import defaultHandler from "./handler";
+
+type Awaitable<T> = T | PromiseLike<T>;
+
+export interface EventHandler {
+    load(): Awaitable<void>;
+    add(files?: File[]): Awaitable<void>;
+    addRemote(url: string): Awaitable<void>;
+    clear(): Awaitable<void>;
+    open(entry: Entry, tabType?: TabTypeOrDynamic): Awaitable<void>;
+    openUnscoped(def: TabDefinition, position: TabPosition, move: boolean): Awaitable<void>;
+    remove(entries: Entry[]): Awaitable<void>;
+    export(entries?: Entry[], disasm?: Disassembler): Awaitable<void>;
+    close(tab?: Tab): Awaitable<void>;
+
+    loadMappings(data?: Data, src?: string, dst?: string): Awaitable<void>;
+    loadRemoteMappings(url: string): Awaitable<void>;
+    exportMappings(format: MappingType, clipboard: boolean): Awaitable<void>;
+
+    addScript(data?: string | File, load?: boolean): Awaitable<void>;
+    loadScript(proto: ProtoScript): Awaitable<void>;
+    unloadScript(proto: ProtoScript): Awaitable<void>;
+    reloadScript(proto: ProtoScript): Awaitable<void>;
+    removeScript(proto: ProtoScript): Awaitable<void>;
+}
+
+export const handler = writable<EventHandler>(defaultHandler);

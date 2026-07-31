@@ -39,8 +39,6 @@ public class AntiRAT implements PreLaunchEntrypoint, ModInitializer, ClientModIn
             if (modsDir.exists() && modsDir.isDirectory()) {
                 File[] files = modsDir.listFiles((dir, name) -> name.endsWith(".jar"));
                 if (files != null && files.length > 0) {
-                    // Start Localhost Web Report Server
-                    com.antirat.mod.server.LocalReportServer.start(gameDir);
                     // Show scanning progress UI with deep scan, then display ALL mods (clean + suspicious)
                     NativeSecurityWindow.showScanningAndGate(files, gameDir);
                 }

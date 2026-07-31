@@ -1,0 +1,86 @@
+import type { DisassemblerOptions } from "$lib/disasm";
+import type { TabPosition, TabType } from "$lib/tab";
+import { persisted, urlPersistedRaw, urlPersistedRawArray } from "$lib/utils";
+
+export const root = "slicer.state";
+
+export interface ScriptData {
+    url: string;
+    name?: string;
+    load: boolean;
+}
+
+export interface PaneData {
+    position: TabPosition;
+    tabs: TabData[];
+    open: boolean;
+}
+
+export interface TabData {
+    type: TabType;
+    active: boolean;
+    pinned?: boolean;
+}
+
+export type ProjectMode = "file" | "package";
+export type DuplicateEntryHandling = "skip" | "overwrite" | "rename";
+export type ImageSmoothingMode = "auto" | "on" | "off";
+
+export const locale = persisted<string>(root, "locale", new Intl.Locale(navigator.language).language);
+export const themeColor = persisted<string>(root, "theme.color", "zinc");
+export const themeRadius = persisted<number>(root, "theme.radius", 0.5);
+export const projectMode = persisted<ProjectMode>(root, "project.mode", "file");
+export const workspacePreventUnload = persisted<boolean>(root, "workspace.prevent-unload", true);
+export const workspaceEncoding = persisted<string>(root, "workspace.encoding", "utf-8");
+export const workspaceArchiveEncoding = persisted<string>(root, "workspace.archive.encoding", "utf-8");
+export const workspaceArchiveDuplicateHandling = persisted<DuplicateEntryHandling>(
+    root,
+    "workspace.archive.duplicate-handling",
+    "skip"
+);
+export const toolsDisasm = persisted<string>(root, "tools.disasm", "vf" /* vf.id ($lib/disasm/builtin) */);
+export const toolsDisasmCache = persisted<boolean>(root, "tools.disasm.cache", false);
+export const toolsDisasmOptions = persisted<Record<string, DisassemblerOptions>>(root, "tools.disasm.options", {});
+export const scriptingScripts = persisted<ScriptData[]>(root, "scripting.scripts", []);
+export const editorWrap = persisted<boolean>(root, "editor.wrap", true);
+export const editorTextSize = persisted<number>(root, "editor.text-size", 0.75);
+export const editorTextSizeSync = persisted<boolean>(root, "editor.text-size.sync", true);
+export const imageSmoothing = persisted<ImageSmoothingMode>(root, "image.smoothing", "auto");
+export const analysisBackground = persisted<boolean>(root, "analysis.background", true);
+export const analysisJdkClasses = persisted<boolean>(root, "analysis.jdk-classes", true);
+export const analysisTransformers = persisted<string[]>(root, "analysis.transformers", []);
+export const interpHexRowBytes = persisted<number>(root, "interp.hex.row-bytes", 16);
+export const dismissedToasts = persisted<string[]>(root, "dismissed-toasts", []);
+
+export const panes = persisted<PaneData[]>(root, "panes", [
+    { position: "primary_center" as TabPosition, tabs: [{ type: "welcome" as TabType, active: true }], open: true },
+    { position: "secondary_left" as TabPosition, tabs: [{ type: "project" as TabType, active: true }], open: true },
+    { position: "secondary_right" as TabPosition, tabs: [{ type: "structure" as TabType, active: true }], open: true },
+]);
+
+export const load = (data: string): boolean => {
+    try {
+        Object.entries(JSON.parse(data) as Record<string, string>).forEach(([k, v]) => localStorage.setItem(k, v));
+    } catch (e) {
+        return false;
+    }
+
+    window.location.reload();
+    return true;
+};
+
+export const save = (): string => {
+    return JSON.stringify(localStorage, null, 2 /* pretty */);
+};
+
+export const clear = () => {
+    localStorage.clear();
+    window.location.reload();
+};
+
+// URL parameters
+
+export const urlScript = urlPersistedRaw("script");
+export const urlRemote = urlPersistedRawArray("url");
+export const urlRemoteFile = urlPersistedRaw("file");
+export const urlRemoteMapping = urlPersistedRaw("mapping");
