@@ -28,6 +28,12 @@ dependencies {
     implementation 'org.ow2.asm:asm:9.7'
     implementation 'org.ow2.asm:asm-commons:9.7'
     implementation 'org.ow2.asm:asm-tree:9.7'
+
+    // Java Decompilers — CFR & Vineflower bundled for source-level threat inspection
+    implementation 'org.benf:cfr:0.152'
+    implementation 'org.vineflower:vineflower:1.12.0'
+    include 'org.benf:cfr:0.152'
+    include 'org.vineflower:vineflower:1.12.0'
 }
 
 processResources {

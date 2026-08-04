@@ -329,6 +329,154 @@ public class NativeSecurityWindow {
         try { Thread.sleep(ms); } catch (InterruptedException ignored) {}
     }
 
+    // ── Decompile Source Dialog ──────────────────────────────────────────────
+
+    private static void openDecompileDialog(JDialog parent, SecurityScanner.SecurityReport report) {
+        File jarFile = report.metadata.getJarFile();
+        if (jarFile == null || !jarFile.exists()) return;
+
+        // Collect all .class entries from the JAR
+        List<String> classEntries = new ArrayList<>();
+        try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(jarFile)) {
+            java.util.Enumeration<? extends java.util.zip.ZipEntry> entries = zip.entries();
+            while (entries.hasMoreElements()) {
+                java.util.zip.ZipEntry e = entries.nextElement();
+                if (!e.isDirectory() && e.getName().endsWith(".class")) classEntries.add(e.getName());
+            }
+        } catch (Exception ex) { return; }
+
+        if (classEntries.isEmpty()) {
+            JOptionPane.showMessageDialog(parent, "No .class files found in JAR.", "Decompile", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        java.util.Collections.sort(classEntries);
+
+        JDialog dlg = new JDialog(parent, "⚙ Decompile — " + report.metadata.getName(), true);
+        dlg.setSize(1100, 720);
+        dlg.setLocationRelativeTo(parent);
+
+        JPanel root = new JPanel(new BorderLayout(0, 0));
+        root.setBackground(BG);
+
+        // Left: class list with search
+        JPanel leftPanel = new JPanel(new BorderLayout(4, 4));
+        leftPanel.setBackground(PANEL);
+        leftPanel.setPreferredSize(new Dimension(280, 0));
+        leftPanel.setBorder(new EmptyBorder(10, 10, 10, 6));
+
+        JTextField classSearch = new JTextField();
+        classSearch.setBackground(BG);
+        classSearch.setForeground(TEXT);
+        classSearch.setCaretColor(ACCENT);
+        classSearch.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        classSearch.setBorder(BorderFactory.createCompoundBorder(new LineBorder(BORDER, 1, true), new EmptyBorder(5, 8, 5, 8)));
+        classSearch.putClientProperty("Placeholder", "Search classes...");
+
+        DefaultListModel<String> classModel = new DefaultListModel<>();
+        classEntries.forEach(classModel::addElement);
+        JList<String> classList = new JList<>(classModel);
+        classList.setBackground(BG);
+        classList.setForeground(new Color(160, 200, 255));
+        classList.setSelectionBackground(new Color(40, 60, 90));
+        classList.setSelectionForeground(ACCENT);
+        classList.setFont(new Font("Consolas", Font.PLAIN, 11));
+
+        classSearch.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            private void filter() {
+                String q = classSearch.getText().toLowerCase();
+                classModel.clear();
+                classEntries.stream().filter(c -> c.toLowerCase().contains(q)).forEach(classModel::addElement);
+            }
+            public void insertUpdate(javax.swing.event.DocumentEvent e) { filter(); }
+            public void removeUpdate(javax.swing.event.DocumentEvent e) { filter(); }
+            public void changedUpdate(javax.swing.event.DocumentEvent e) { filter(); }
+        });
+
+        JLabel classLabel = new JLabel("Classes in " + jarFile.getName());
+        classLabel.setFont(new Font("Segoe UI", Font.BOLD, 11));
+        classLabel.setForeground(MUTED);
+        classLabel.setBorder(new EmptyBorder(0, 0, 6, 0));
+
+        leftPanel.add(classLabel, BorderLayout.NORTH);
+        leftPanel.add(classSearch, BorderLayout.BEFORE_FIRST_LINE);
+        JPanel leftInner = new JPanel(new BorderLayout(4, 4));
+        leftInner.setOpaque(false);
+        leftInner.add(classLabel, BorderLayout.NORTH);
+        leftInner.add(classSearch, BorderLayout.CENTER);
+        leftPanel.add(leftInner, BorderLayout.NORTH);
+        leftPanel.add(new JScrollPane(classList), BorderLayout.CENTER);
+
+        // Right: source code viewer
+        JPanel rightPanel = new JPanel(new BorderLayout(0, 0));
+        rightPanel.setBackground(BG);
+
+        JLabel sourceTitle = new JLabel("  Select a class to decompile", SwingConstants.LEFT);
+        sourceTitle.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        sourceTitle.setForeground(ACCENT);
+        sourceTitle.setBackground(PANEL);
+        sourceTitle.setOpaque(true);
+        sourceTitle.setBorder(new EmptyBorder(8, 12, 8, 12));
+
+        JTextArea sourceArea = new JTextArea();
+        sourceArea.setEditable(false);
+        sourceArea.setLineWrap(false);
+        sourceArea.setBackground(new Color(13, 17, 23));
+        sourceArea.setForeground(new Color(200, 220, 255));
+        sourceArea.setFont(new Font("Consolas", Font.PLAIN, 12));
+        sourceArea.setBorder(new EmptyBorder(10, 14, 10, 14));
+        sourceArea.setCaretColor(ACCENT);
+
+        JLabel statusBar = new JLabel("  Ready", SwingConstants.LEFT);
+        statusBar.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+        statusBar.setForeground(MUTED);
+        statusBar.setBackground(PANEL);
+        statusBar.setOpaque(true);
+        statusBar.setBorder(new EmptyBorder(4, 10, 4, 10));
+
+        rightPanel.add(sourceTitle, BorderLayout.NORTH);
+        rightPanel.add(new JScrollPane(sourceArea), BorderLayout.CENTER);
+        rightPanel.add(statusBar, BorderLayout.SOUTH);
+
+        // Decompile on class click
+        classList.addListSelectionListener(e -> {
+            if (e.getValueIsAdjusting()) return;
+            String selected = classList.getSelectedValue();
+            if (selected == null) return;
+
+            sourceTitle.setText("  Decompiling: " + selected + " …");
+            statusBar.setText("  ⏳ Running CFR decompiler...");
+            sourceArea.setText("");
+            dlg.repaint();
+
+            // Run decompile in background thread
+            new Thread(() -> {
+                com.antirat.mod.scanner.ClassDecompiler.DecompileResult result =
+                    com.antirat.mod.scanner.ClassDecompiler.decompile(jarFile, selected);
+                SwingUtilities.invokeLater(() -> {
+                    if (result.success) {
+                        sourceArea.setText(result.source);
+                        sourceArea.setCaretPosition(0);
+                        sourceTitle.setText("  " + selected + "  [" + result.engine.name() + "]");
+                        statusBar.setText("  ✓ Decompiled with " + result.engine.name() + " — " + result.source.lines().count() + " lines");
+                    } else {
+                        sourceArea.setText("// Decompilation failed:\n// " + result.error);
+                        sourceTitle.setText("  " + selected + "  [ERROR]");
+                        statusBar.setText("  ✗ " + result.error);
+                    }
+                });
+            }, "ByteGuard-Decompiler").start();
+        });
+
+        JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, leftPanel, rightPanel);
+        splitPane.setDividerLocation(280);
+        splitPane.setBackground(BG);
+        root.add(splitPane, BorderLayout.CENTER);
+
+        dlg.setContentPane(root);
+        dlg.setVisible(true);
+    }
+
     // ── Phase 2: Full Security Gate ─────────────────────────────────────────
 
     private static void openGate(List<SecurityScanner.SecurityReport> allReports, CountDownLatch latch) {
@@ -445,7 +593,17 @@ public class NativeSecurityWindow {
         JLabel detailTitle = new JLabel("Select a mod to view report", SwingConstants.LEFT);
         detailTitle.setFont(new Font("Segoe UI", Font.BOLD, 13));
         detailTitle.setForeground(TEXT);
-        detailTitle.setBorder(new EmptyBorder(0, 0, 6, 0));
+
+        AnimatedHoverButton decompileBtn = new AnimatedHoverButton("⚙ Decompile Source", BLUE, BLUE_H);
+        decompileBtn.setPreferredSize(new Dimension(155, 28));
+        decompileBtn.setFont(new Font("Segoe UI", Font.BOLD, 11));
+        decompileBtn.setVisible(false);
+
+        JPanel detailHeader = new JPanel(new BorderLayout(8, 0));
+        detailHeader.setBackground(BG);
+        detailHeader.setBorder(new EmptyBorder(0, 0, 6, 0));
+        detailHeader.add(detailTitle, BorderLayout.WEST);
+        detailHeader.add(decompileBtn, BorderLayout.EAST);
 
         JTextArea detailArea = new JTextArea();
         detailArea.setEditable(false);
@@ -458,7 +616,7 @@ public class NativeSecurityWindow {
 
         JPanel detailPanel = new JPanel(new BorderLayout(6, 6));
         detailPanel.setBackground(BG);
-        detailPanel.add(detailTitle, BorderLayout.NORTH);
+        detailPanel.add(detailHeader, BorderLayout.NORTH);
         detailPanel.add(new JScrollPane(detailArea), BorderLayout.CENTER);
 
         modList.addListSelectionListener(e -> {
@@ -468,6 +626,15 @@ public class NativeSecurityWindow {
             int displayScore = Math.min(100, r.suspicionScore);
             detailTitle.setText(r.metadata.getName() + " — " + r.suspicionLevel.label + " (" + displayScore + "/100)");
 
+            // Show decompile button for non-clean mods with a JAR
+            boolean hasJar = r.metadata.getJarFile() != null && r.metadata.getJarFile().exists();
+            decompileBtn.setVisible(hasJar);
+
+            // Wire decompile action
+            for (java.awt.event.ActionListener al : decompileBtn.getActionListeners()) {
+                decompileBtn.removeActionListener(al);
+            }
+            decompileBtn.addActionListener(evt -> openDecompileDialog(frame, r));
 
             StringBuilder sb = new StringBuilder();
             sb.append("====================================================\n");
