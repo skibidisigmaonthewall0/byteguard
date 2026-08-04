@@ -69,8 +69,16 @@ public class ClassDecompiler {
             if (result != null && !result.isBlank()) {
                 return DecompileResult.ok(result, Engine.VINEFLOWER);
             }
-        } catch (Exception vfEx) {
-            return DecompileResult.fail("Both CFR and Vineflower failed: " + vfEx.getMessage());
+        } catch (Exception ignored) {}
+
+        // Ultimate Fallback: ASM Bytecode Disassembler (Guaranteed to work for any valid class file)
+        try {
+            String result = disassembleWithASM(jarFile, classPath);
+            if (result != null && !result.isBlank()) {
+                return DecompileResult.ok("// Decompiler fallback to ASM Bytecode Disassembly:\n\n" + result, Engine.CFR);
+            }
+        } catch (Exception asmEx) {
+            return DecompileResult.fail("Decompilation failed: " + asmEx.getMessage());
         }
 
         return DecompileResult.fail("Decompilation returned empty output.");
@@ -104,8 +112,22 @@ public class ClassDecompiler {
             })
             .build();
 
-        // CFR takes "path/to/file.jar!/com/example/Foo.class" format
-        driver.analyse(List.of(jarFile.getAbsolutePath() + "!/" + classPath));
+        // Extract class bytes to temp file so CFR / Vineflower read direct class file reliably
+        Path tempClass = Files.createTempFile("cfr_entry_", ".class");
+        try {
+            try (ZipFile zip = new ZipFile(jarFile)) {
+                ZipEntry entry = zip.getEntry(classPath);
+                if (entry != null) {
+                    try (InputStream is = zip.getInputStream(entry)) {
+                        Files.copy(is, tempClass, StandardCopyOption.REPLACE_EXISTING);
+                    }
+                }
+            }
+            driver.analyse(List.of(tempClass.toAbsolutePath().toString()));
+        } finally {
+            Files.deleteIfExists(tempClass);
+        }
+
         return output.toString();
     }
 
@@ -176,6 +198,22 @@ public class ClassDecompiler {
         } finally {
             deleteRecursive(tempInputDir.toFile());
             deleteRecursive(tempOutputDir.toFile());
+        }
+    }
+
+    // ── ASM Disassembler Fallback ───────────────────────────────────────────
+
+    private static String disassembleWithASM(File jarFile, String classPath) throws Exception {
+        try (ZipFile zip = new ZipFile(jarFile)) {
+            ZipEntry entry = zip.getEntry(classPath);
+            if (entry == null) return null;
+            try (InputStream is = zip.getInputStream(entry)) {
+                org.objectweb.asm.ClassReader cr = new org.objectweb.asm.ClassReader(is);
+                StringWriter sw = new StringWriter();
+                org.objectweb.asm.util.TraceClassVisitor tcv = new org.objectweb.asm.util.TraceClassVisitor(new PrintWriter(sw));
+                cr.accept(tcv, 0);
+                return sw.toString();
+            }
         }
     }
 
